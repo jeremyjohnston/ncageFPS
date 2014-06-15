@@ -5,19 +5,19 @@ var CIRCLE = Math.PI * 2;
 var MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent)
 
 // Weapon textures
-var ripper = new Bitmap('ripper.png', 320, 242);
-var heart = new Bitmap('heart.jpg', 229, 220);
+var ripper = new Bitmap('../Assets/ripper.png', 320, 242);
+var heart = new Bitmap('../Assets/heart.jpg', 229, 220);
 
 // Wall textures
-var confused = new Bitmap('expendablesConfused.jpg', 600, 397);
+var confused = new Bitmap('../Assets/expendablesConfused.jpg', 600, 397);
 
 // Sky textures
-var cagebox = new Bitmap('cagebox.jpg', 1920, 1080);
-var clouds = new Bitmap('seamlessClouds.jpg', 800, 553);
+var cagebox = new Bitmap('../Assets/cagebox.jpg', 1920, 1080);
+var clouds = new Bitmap('../Assets/seamlessClouds.jpg', 800, 553);
 
 // Ground textures
-var bw = new Bitmap('bw.jpg', 250, 202);
-var sand = new Bitmap('seamlessSand.jpg', 900, 900);
+var bw = new Bitmap('../Assets/bw.jpg', 250, 202);
+var sand = new Bitmap('../Assets/seamlessSand.jpg', 900, 900);
 
 // Game Texture settings
 var skyBM = clouds;
