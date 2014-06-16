@@ -7,6 +7,7 @@ var MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAge
 // Weapon textures
 var ripper = new Bitmap('../Assets/ripper.png', 320, 242);
 var heart = new Bitmap('../Assets/heart.jpg', 229, 220);
+var laser = new Bitmap('../Assets/explosion.png', 256, 256);
 
 // Wall textures
 var confused = new Bitmap('../Assets/expendablesConfused.jpg', 600, 397);
@@ -24,12 +25,13 @@ var skyBM = clouds;
 var wallBM = bw;
 var groundBM = sand;
 var weaponBM = ripper;
+var missileBM = laser;
 
 
 /** Control Object **/
 function Controls() {
-	this.codes  = { 37: 'left', 39: 'right', 38: 'forward', 40: 'backward' };
-	this.states = { 'left': false, 'right': false, 'forward': false, 'backward': false };
+	this.codes  = { 37: 'left', 39: 'right', 38: 'forward', 40: 'backward', 96: 'fire' };//arrow keys to move, numpad 0 to fire
+	this.states = { 'left': false, 'right': false, 'forward': false, 'backward': false, 'fire': false };
 	document.addEventListener('keydown', this.onKey.bind(this, true), false);
 	document.addEventListener('keyup', this.onKey.bind(this, false), false);
 	document.addEventListener('touchstart', this.onTouch.bind(this), false);
@@ -40,13 +42,14 @@ function Controls() {
 Controls.prototype.onTouch = function(e) {
 	var t = e.touches[0];
 	this.onTouchEnd(e);
-	if (t.pageY < window.innerHeight * 0.5) this.onKey(true, { keyCode: 38 });
-	else if (t.pageX < window.innerWidth * 0.5) this.onKey(true, { keyCode: 37 });
-	else if (t.pageY > window.innerWidth * 0.5) this.onKey(true, { keyCode: 39 });
+	if (t.pageY < window.innerHeight * 0.5) this.onKey(true, { keyCode: 38 }); //forward
+	else if (t.pageX < window.innerWidth * 0.5) this.onKey(true, { keyCode: 37 }); //left
+	else if (t.pageY > window.innerWidth * 0.5) this.onKey(true, { keyCode: 39 }); //right
+	else if (t.pageY > window.innerHeight * 0.5) this.onKey(true, { keyCode: 96}); //touch bottom half of screen, fire
 };
 
 Controls.prototype.onTouchEnd = function(e) {
-	this.states = { 'left': false, 'right': false, 'forward': false, 'backward': false };
+	this.states = { 'left': false, 'right': false, 'forward': false, 'backward': false, 'fire': false };
 	e.preventDefault();
 	e.stopPropagation();
 };
@@ -67,13 +70,20 @@ function Bitmap(src, width, height) {
 	this.height = height;
 }
 
+//TODO: Weapon and Projectile classes once projectile test works
+//Prototype should be an image fired from the position and a direction of the player, scaling down over time and distance
+//2nd ver should remember position it was originally fired in, and hide from player when player turns away from it
+//3rd ver should raytrace between player and itself, and disappear if hidden by geometry
+
 /** Player **/
 function Player(x, y, direction, weaponBM){
 	this.x = x;
 	this.y = y;
 	this.direction = direction;
 	this.weapon = weaponBM; //new Bitmap('ripper.png', 320, 242);
+	this.missile = missileBM;
 	this.paces = 0;
+	this.framesSinceFire = 1000;
 }
 
 Player.prototype.rotate = function(angle){
@@ -92,11 +102,16 @@ Player.prototype.walk = function(distance, map){
 	this.paces += distance;
 };
 
+Player.prototype.fire = function(seconds, map){
+	this.framesSinceFire = 1;
+};
+
 Player.prototype.update = function(controls, map, seconds) {
 	if (controls.left) this.rotate(-Math.PI * seconds);
 	if (controls.right) this.rotate(Math.PI * seconds);
 	if (controls.forward) this.walk(3 * seconds, map);
 	if (controls.backward) this.walk(-3 * seconds, map);
+	if (controls.fire) this.fire(seconds, map);
 };
 
 /** Map **/
@@ -168,6 +183,8 @@ Map.prototype.cast = function(point, angle, range) {
 Map.prototype.update = function(seconds) {
 	if (this.light > 0) this.light = Math.max(this.light - 10 * seconds, 0);
 	else if (Math.random() * 5 < seconds) this.light = 2;
+	
+	//TODO: Update projectile position
 };
 
 /** Camera **/
@@ -183,11 +200,13 @@ function Camera(canvas, resolution, fov) {
 	this.scale = (this.width + this.height) / 1200;
   }
 
-Camera.prototype.render = function(player, map) {
+Camera.prototype.render = function(player, map, seconds) {
 	this.drawSky(player.direction, map.skybox, map.light);
 	this.drawTerrain(player.direction, map.groundTexture, map.light);
 	this.drawColumns(player, map);
+	this.drawMissile(player, map, seconds);
 	this.drawWeapon(player.weapon, player.paces);
+	
 };
 
 Camera.prototype.drawSky = function(direction, sky, ambient) {
@@ -225,9 +244,12 @@ Camera.prototype.drawWeapon = function(weapon, paces) {
 	this.ctx.drawImage(weapon.image, left, top, weapon.width * this.scale, weapon.height * this.scale);
 };
 
-// Let's add a draw terrain function
-// This ver does one big image, reusing the skybox code
-// TODO: try drawing tiles like the walls but for the floor
+/** 
+ Let's add a draw terrain function
+ This ver does one big image, reusing the skybox code.
+ TODO: try drawing tiles like the walls but for the floor. 
+ This would give it a sense of scale and movement that the current ver does not have. 
+**/
 Camera.prototype.drawTerrain = function(direction, texture, ambient) {
 	var width = this.width * (CIRCLE / this.fov);
 	var left = -width * direction / CIRCLE;
@@ -244,6 +266,29 @@ Camera.prototype.drawTerrain = function(direction, texture, ambient) {
 	  this.ctx.fillRect(0, this.height * 0.5, this.width, this.height * 0.5);
 	}
 	this.ctx.restore();
+};
+
+Camera.prototype.drawMissile = function(player, map, seconds){
+	var ctx = this.ctx;
+	var missile = player.missile;
+	
+	var rate = 0.75;
+	var width = missile.width / (player.framesSinceFire * rate);
+	var height = missile.height / (player.framesSinceFire * rate);
+	var left = this.width * 0.5;
+	var top = this.height * 0.5;
+	
+	if (player.framesSinceFire < 120){ //draw missile for 2 or so seconds, modified by frame rate and rate var above
+		// ctx.fillStyle = '#bbbbbb';
+		// ctx.globalAlpha = 1;
+		// ctx.fillRect(left, top, width, height);
+		ctx.drawImage(missile.image, left, top, width, height);
+		player.framesSinceFire++;
+	}
+	else
+	{
+		player.framesSinceFire = 1000;
+	}
 };
 
 Camera.prototype.drawColumn = function(column, ray, angle, map) {
@@ -321,5 +366,5 @@ map.randomize();
 loop.start(function frame(seconds) {
 	map.update(seconds);
 	player.update(controls.states, map, seconds);
-	camera.render(player, map);
+	camera.render(player, map, seconds);
 });
