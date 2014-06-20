@@ -1,5 +1,6 @@
 // Code from http://www.playfuljs.com/a-first-person-engine-in-265-lines/
 // With modification by Jeremy Johnston
+//another good resource http://www.arguingwithmyself.com/demos/raycaster/raycaster5.html
 
 var CIRCLE = Math.PI * 2;
 var MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent)
@@ -76,12 +77,11 @@ function Bitmap(src, width, height) {
 //3rd ver should raytrace between player and itself, and disappear if hidden by geometry
 
 /** Player **/
-function Player(x, y, direction, weaponBM){
+function Player(x, y, direction, weapon){
 	this.x = x;
 	this.y = y;
 	this.direction = direction;
-	this.weapon = weaponBM; //new Bitmap('ripper.png', 320, 242);
-	this.missile = missileBM;
+	this.weapon = weapon;
 	this.paces = 0;
 	this.framesSinceFire = 1000;
 }
@@ -104,6 +104,7 @@ Player.prototype.walk = function(distance, map){
 
 Player.prototype.fire = function(seconds, map){
 	this.framesSinceFire = 1;
+	this.weapon.missile.fire(player.x, player.y, player.direction, 120);
 };
 
 Player.prototype.update = function(controls, map, seconds) {
@@ -112,6 +113,36 @@ Player.prototype.update = function(controls, map, seconds) {
 	if (controls.forward) this.walk(3 * seconds, map);
 	if (controls.backward) this.walk(-3 * seconds, map);
 	if (controls.fire) this.fire(seconds, map);
+};
+
+/** Weapon **/
+function Weapon(weaponBM, missile){
+	//weapon bitmap
+	this.weaponBM = weaponBM;
+	
+	//type of missile that the weapon fires
+	this.missile = missile;
+	
+	//TODO: add damage values, velocity
+}
+
+Weapon.prototype.switchMissile = function(missile){
+	this.missile = missile;
+};
+
+/** Missile **/
+function Missile(x, y, direction, missileBM){
+	this.x = x;
+	this.y = y;
+	this.direction = direction;
+	this.missileBM = missileBM;
+}
+
+Missile.prototype.fire = function(x, y, direction, lifetime){
+	this.x = x;
+	this.y = y;
+	this.direction = direction;
+	this.lifetime = lifetime; //max time to render (until missile hits a wall)
 };
 
 /** Map **/
@@ -180,6 +211,50 @@ Map.prototype.cast = function(point, angle, range) {
 	}
 };
 
+//'false' cast to get walls where there are none, to render spaces between walls in a lazy inefficient manner
+Map.prototype.cast2 = function(point, angle, range) {
+	var self = this;
+	var sin = Math.sin(angle);
+	var cos = Math.cos(angle);
+	var noWall = { length2: Infinity };
+
+	return ray({ x: point.x, y: point.y, height: 0, distance: 0 });
+
+	function ray(origin) {
+	  var stepX = step(sin, cos, origin.x, origin.y);
+	  var stepY = step(cos, sin, origin.y, origin.x, true);
+	  var nextStep = stepX.length2 < stepY.length2
+		? inspect(stepX, 1, 0, origin.distance, stepX.y)
+		: inspect(stepY, 0, 1, origin.distance, stepY.x);
+
+	  if (nextStep.distance > range) return [origin];
+	  return [origin].concat(ray(nextStep));
+	}
+
+	function step(rise, run, x, y, inverted) {
+	  if (run === 0) return noWall;
+	  var dx = run > 0 ? Math.floor(x + 1) - x : Math.ceil(x - 1) - x;
+	  var dy = dx * (rise / run);
+	  return {
+		x: inverted ? y + dy : x + dx,
+		y: inverted ? x + dx : y + dy,
+		length2: dx * dx + dy * dy
+	  };
+	}
+
+	function inspect(step, shiftX, shiftY, distance, offset) {
+	  var dx = cos < 0 ? shiftX : 0;
+	  var dy = sin < 0 ? shiftY : 0;
+	  step.height = self.get(step.x - dx, step.y - dy) + 1;
+		step.height = step.height > 1 ? 0 : 1;
+	  step.distance = distance + Math.sqrt(step.length2);
+	  if (shiftX) step.shading = cos < 0 ? 2 : 0;
+	  else step.shading = sin < 0 ? 2 : 1;
+	  step.offset = offset - Math.floor(offset);
+	  return step;
+	}
+};
+
 Map.prototype.update = function(seconds) {
 	if (this.light > 0) this.light = Math.max(this.light - 10 * seconds, 0);
 	else if (Math.random() * 5 < seconds) this.light = 2;
@@ -198,13 +273,13 @@ function Camera(canvas, resolution, fov) {
 	this.range = MOBILE ? 8 : 14;
 	this.lightRange = 5;
 	this.scale = (this.width + this.height) / 1200;
-  }
+}
 
 Camera.prototype.render = function(player, map, seconds) {
 	this.drawSky(player.direction, map.skybox, map.light);
-	this.drawTerrain(player.direction, map.groundTexture, map.light);
+	//this.drawTerrain(player.direction, map.groundTexture, map.light);
 	this.drawColumns(player, map);
-	this.drawMissile(player, map, seconds);
+	this.drawMissile(player);
 	this.drawWeapon(player.weapon, player.paces);
 	
 };
@@ -228,15 +303,22 @@ Camera.prototype.drawSky = function(direction, sky, ambient) {
 
 Camera.prototype.drawColumns = function(player, map) {
 	this.ctx.save();
+	
 	for (var column = 0; column < this.resolution; column++) {
 	  var angle = this.fov * (column / this.resolution - 0.5);
 	  var ray = map.cast(player, player.direction + angle, this.range);
 	  this.drawColumn(column, ray, angle, map);
+		
+		var ray = map.cast2(player, player.direction + angle, this.range);
+	  this.drawColumn2(column, ray, angle, map);
+		
 	}
+	
 	this.ctx.restore();
 };
 
 Camera.prototype.drawWeapon = function(weapon, paces) {
+	var weapon = weapon.weaponBM;
 	var bobX = Math.cos(paces * 2) * this.scale * 6;
 	var bobY = Math.sin(paces * 4) * this.scale * 6;
 	var left = this.width * 0.40 + bobX;
@@ -268,9 +350,9 @@ Camera.prototype.drawTerrain = function(direction, texture, ambient) {
 	this.ctx.restore();
 };
 
-Camera.prototype.drawMissile = function(player, map, seconds){
+Camera.prototype.drawMissile = function(player){
 	var ctx = this.ctx;
-	var missile = player.missile;
+	var missile = player.weapon.missile.missileBM;
 	
 	var rate = 0.75;
 	var width = missile.width / (player.framesSinceFire * rate);
@@ -291,13 +373,26 @@ Camera.prototype.drawMissile = function(player, map, seconds){
 	}
 };
 
+//TODO: reuse ray cast code to cast a ray at time of weapon fire
+/* Cast a ray that returns distance to wall
+   Missile time to impact wall is a function of frame count and distance to wall at time of fire
+   On collision, swap texture for remaining missile lifetime
+   
+   To render better:
+   Reuse or modify draw column here.
+   When a missile is fired, save map grid location
+   As when a player is facing a wall, the columns of the wall is drawn, with the height of wall clipped to match distance.
+   Each frame update, change missile location, and draw missile as columns as well over walls behind it
+   Missiles will cease upon collision with a wall, upon which an explosion will occur.
+*/
+
 Camera.prototype.drawColumn = function(column, ray, angle, map) {
 	var ctx = this.ctx;
 	var texture = map.wallTexture;
 	var left = Math.floor(column * this.spacing);
 	var width = Math.ceil(this.spacing);
 	var hit = -1;
-
+	
 	while (++hit < ray.length && ray[hit].height <= 0);
 
 	for (var s = ray.length - 1; s >= 0; s--) {
@@ -305,21 +400,92 @@ Camera.prototype.drawColumn = function(column, ray, angle, map) {
 	  var rainDrops = Math.pow(Math.random(), 3) * s;
 	  var rain = (rainDrops > 0) && this.project(0.1, angle, step.distance);
 
-	  if (s === hit) {
-		var textureX = Math.floor(texture.width * step.offset);
+	  var textureX = Math.floor(texture.width * step.offset);
 		var wall = this.project(step.height, angle, step.distance);
-
-		ctx.globalAlpha = 1;
-		ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left, wall.top, width, wall.height);
+	  
+	  if (s === hit) {
 		
-		ctx.fillStyle = '#000000';
-		ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
-		ctx.fillRect(left, wall.top, width, wall.height);
+      ctx.globalAlpha = 1;
+      
+      //Draw wall
+			
+      ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left, wall.top, width, wall.height);
+      
+      // ctx.fillStyle = '#000000';
+      // ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
+      // ctx.fillRect(left, wall.top, width, wall.height);
 	  }
 	  
-	  ctx.fillStyle = '#ffffff';
-	  ctx.globalAlpha = 0.15;
-	  while (--rainDrops > 0) ctx.fillRect(left, Math.random() * rain.top, 1, rain.height);
+
+	  // ctx.fillStyle = '#ffffff';
+	  // ctx.globalAlpha = 0.15;
+	  // while (--rainDrops > 0) ctx.fillRect(left, Math.random() * rain.top, 1, rain.height);
+	}
+};
+
+
+Camera.prototype.drawColumn2 = function(column, ray, angle, map) {
+	var ctx = this.ctx;
+	var texture = groundBM;
+	var left = Math.floor(column * this.spacing);
+	var width = Math.ceil(this.spacing);
+	var hit = -1;
+	
+	while (++hit < ray.length && ray[hit].height <= 0);
+
+	for (var s = ray.length - 1; s >= 0; s--) {
+	  var step = ray[s];
+	  
+
+	  var textureX = Math.floor(texture.width * step.offset);
+		var wall = this.project(step.height, angle, step.distance);
+	  
+	  if (s === hit) {
+		
+      ctx.globalAlpha = 1;
+      
+      //Draw wall
+			
+      ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left, wall.top+wall.height, width, wall.height);
+      
+      ctx.fillStyle = '#000000';
+      ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
+      ctx.fillRect(left, wall.top, width, wall.height);
+	  }
+	  
+
+	 
+	}
+};
+
+//try 2 types of walls, 1 just rendered shorter and everywhere
+//requires 'false' raycasting to collide with wall at every grid point
+Camera.prototype.drawRow = function(column, ray, angle, map) {
+	var ctx = this.ctx;
+	var texture = map.wallTexture;
+	var left = Math.floor(column * this.spacing);
+	var width = Math.ceil(this.spacing);
+	var hit = -1;
+	
+	while (++hit < ray.length && ray[hit].height <= 0);
+
+	for (var s = ray.length - 1; s >= 0; s--) {
+	  var step = ray[s];
+
+	  var textureY = Math.floor(texture.height * step.offset);
+		var wall = this.project(step.height, angle, step.distance);
+	  
+	  if (s === hit) {
+		
+      ctx.globalAlpha = 1;
+      //Draw wall
+      ctx.drawImage(texture.image, 0, textureY, texture.height, 1, left, wall.top, width, wall.height);
+      
+     
+	  }
+	  
+
+	  
 	}
 };
 
@@ -332,6 +498,7 @@ Camera.prototype.project = function(height, angle, distance) {
 	  height: wallHeight
 	}; 
 };
+
 
 /** GameLoop **/
 function GameLoop() {
@@ -354,8 +521,10 @@ GameLoop.prototype.frame = function(time) {
 
 // Create each object
 var display = document.getElementById('display');
-var player = new Player(15.3, -1.2, Math.PI * 0.3, weaponBM);
-var map = new Map(128, wallBM, skyBM, groundBM);
+var missile = new Missile(0, 0, Math.PI * 0.3, missileBM);
+var weapon = new Weapon(weaponBM, missile);
+var player = new Player(15.3, -1.2, Math.PI * 0.3, weapon);
+var map = new Map(16, wallBM, skyBM, groundBM);
 var controls = new Controls();
 var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
