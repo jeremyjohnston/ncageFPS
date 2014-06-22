@@ -22,7 +22,7 @@ var bw = new Bitmap('../Assets/bw.jpg', 250, 202);
 var sand = new Bitmap('../Assets/seamlessSand.jpg', 900, 900);
 
 // Game Texture settings
-var skyBM = clouds;
+var skyBM = cagebox;
 var wallBM = bw;
 var groundBM = sand;
 var weaponBM = ripper;
@@ -245,8 +245,10 @@ Map.prototype.cast2 = function(point, angle, range) {
 	function inspect(step, shiftX, shiftY, distance, offset) {
 	  var dx = cos < 0 ? shiftX : 0;
 	  var dy = sin < 0 ? shiftY : 0;
-	  step.height = self.get(step.x - dx, step.y - dy) + 1;
-		step.height = step.height > 1 ? 0 : 1;
+		
+		// (0 + 1) mod 2 = 1, (1+1) mod 2 = 0, inverting map.get() results
+	  step.height = (self.get(step.x - dx, step.y - dy) + 1) % 2; 
+		
 	  step.distance = distance + Math.sqrt(step.length2);
 	  if (shiftX) step.shading = cos < 0 ? 2 : 0;
 	  else step.shading = sin < 0 ? 2 : 1;
@@ -309,8 +311,8 @@ Camera.prototype.drawColumns = function(player, map) {
 	  var ray = map.cast(player, player.direction + angle, this.range);
 	  this.drawColumn(column, ray, angle, map);
 		
-		var ray = map.cast2(player, player.direction + angle, this.range);
-	  this.drawColumn2(column, ray, angle, map);
+		// var ray = map.cast2(player, player.direction + angle, this.range);
+	  // this.drawColumn2(column, ray, angle, map);
 		
 	}
 	
@@ -393,6 +395,7 @@ Camera.prototype.drawColumn = function(column, ray, angle, map) {
 	var width = Math.ceil(this.spacing);
 	var hit = -1;
 	
+	//Increment hit till first ray element that is a wall
 	while (++hit < ray.length && ray[hit].height <= 0);
 
 	for (var s = ray.length - 1; s >= 0; s--) {
@@ -402,7 +405,16 @@ Camera.prototype.drawColumn = function(column, ray, angle, map) {
 
 	  var textureX = Math.floor(texture.width * step.offset);
 		var wall = this.project(step.height, angle, step.distance);
-	  
+		
+		var ground = wall;
+		var groundX = textureX;
+		if(s > 1){
+			ground = this.project(1, angle, ray[s-1].distance);
+			groundX = Math.floor(groundBM.width * ray[s-1].offset);
+		}
+		
+		
+		// Draw wall if ray hit a wall in this increment. All increments before are spaces
 	  if (s === hit) {
 		
       ctx.globalAlpha = 1;
@@ -411,11 +423,39 @@ Camera.prototype.drawColumn = function(column, ray, angle, map) {
 			
       ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left, wall.top, width, wall.height);
       
-      // ctx.fillStyle = '#000000';
-      // ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
-      // ctx.fillRect(left, wall.top, width, wall.height);
+			// //Draw ground under wall
+			// ctx.drawImage(groundBM.image, textureX, 0, 1, groundBM.height, left, wall.top+wall.height, width, wall.height);
+			ctx.save();
+      ctx.fillStyle = '#000000';
+      ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
+      ctx.fillRect(left, wall.top, width, wall.height);
+			ctx.restore();//so when we draw ground below it doesn't have a weird artifact generation
 	  }
+		
+		if(s > 1){//do not draw around player's head
+		
+		
+				
+			//Draw ground (EDIT: successfully renders ceiling...LOL)
+			ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top-ground.height, width, ground.height);
+			
+			ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top+(ground.height * 1), width, ground.height);
+			
+			// if(s > 1){
+				// ctx.fillStyle = '#000000';
+				// ctx.globalAlpha = Math.max((ray[s-1].distance + ray[s-1].shading) / this.lightRange - map.light, 0);
+				// ctx.fillRect(left, ground.top+(ground.height*1.7), width, ground.height);
+			// }
+		}
+		// else{
+			// //Draw ground (EDIT: successfully renders ceiling...LOL)
+			// ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top-ground.height, width, ground.height);
+		// }
 	  
+		//image, sx, sy, swidth, sheight, x, y, widthClip, heightClip
+		
+		//Try drawing "ground" test
+		//ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left+width, wall.top+wall.height, width, wall.height);
 
 	  // ctx.fillStyle = '#ffffff';
 	  // ctx.globalAlpha = 0.15;
@@ -498,6 +538,8 @@ Camera.prototype.project = function(height, angle, distance) {
 	  height: wallHeight
 	}; 
 };
+
+//TODO: I need a diff project function to calc a floor tile sizing
 
 
 /** GameLoop **/
