@@ -19,12 +19,13 @@ var clouds = new Bitmap('../Assets/seamlessClouds.jpg', 800, 553);
 
 // Ground textures
 var bw = new Bitmap('../Assets/bw.jpg', 250, 202);
+var bwSeamless = new Bitmap('../Assets/seamlessBW_big.jpg', 2048, 1655);
 var sand = new Bitmap('../Assets/seamlessSand.jpg', 900, 900);
 
 // Game Texture settings
-var skyBM = cagebox;
+var skyBM = bwSeamless;
 var wallBM = bw;
-var groundBM = sand;
+var groundBM = bw;
 var weaponBM = ripper;
 var missileBM = laser;
 
@@ -83,7 +84,7 @@ function Player(x, y, direction, weapon){
 	this.direction = direction;
 	this.weapon = weapon;
 	this.paces = 0;
-	this.framesSinceFire = 1000;
+	this.framesSinceFire = 1000;//remove after new missile code works
 }
 
 Player.prototype.rotate = function(angle){
@@ -108,11 +109,19 @@ Player.prototype.fire = function(seconds, map){
 };
 
 Player.prototype.update = function(controls, map, seconds) {
+
+  //Update player state based on controls
 	if (controls.left) this.rotate(-Math.PI * seconds);
 	if (controls.right) this.rotate(Math.PI * seconds);
 	if (controls.forward) this.walk(3 * seconds, map);
 	if (controls.backward) this.walk(-3 * seconds, map);
 	if (controls.fire) this.fire(seconds, map);
+	
+	//TODO: If {weapon switch} then change weapons
+	
+	//Update player's active missiles
+	player.weapon.missile.update(controls, map, seconds);
+	
 };
 
 /** Weapon **/
@@ -131,18 +140,50 @@ Weapon.prototype.switchMissile = function(missile){
 };
 
 /** Missile **/
-function Missile(x, y, direction, missileBM){
+function Missile(x, y, direction, velocity, missileBM){
 	this.x = x;
 	this.y = y;
 	this.direction = direction;
+	this.velocity = velocity;
 	this.missileBM = missileBM;
+	
+	this.alive = false;
+	this.framesSinceFired = 1000;
+	this.lifetime = 0;
+	
 }
 
 Missile.prototype.fire = function(x, y, direction, lifetime){
 	this.x = x;
 	this.y = y;
 	this.direction = direction;
+	this.alive = true;
 	this.lifetime = lifetime; //max time to render (until missile hits a wall)
+};
+
+Missile.prototype.update = function(map, seconds){
+  //Move missile in direction at a rate some fraction quicker than the player
+	if(this.alive){
+		this.travel(3 * seconds * this.velocity, map);
+	}
+};
+
+Missile.prototype.travel = function(distance, map){
+	var dx = Math.cos(this.direction) * distance;
+	var dy = Math.sin(this.direction) * distance;
+	
+	//If no wall in path, travel forward. This can be modified to have bouncing projectiles!
+	if(map.get(this.x + dx, this.y) <= 0 
+	&& map.get(this.x, this.y + dy) <= 0){
+	
+	  this.x += dx;
+		this.y += dy;
+		this.lifetime--;
+	}
+	else{//we hit a wall!
+		this.alive = false;
+		//TODO: spawn explosion
+	}
 };
 
 /** Map **/
@@ -163,6 +204,7 @@ Map.prototype.get = function(x, y){
 		
 	return this.wallGrid[ y * this.size + x ];
 };
+
 Map.prototype.randomize = function() {
 	for (var i = 0; i < this.size * this.size; i++) {
 	  this.wallGrid[i] = Math.random() < 0.3 ? 1 : 0;
@@ -211,57 +253,12 @@ Map.prototype.cast = function(point, angle, range) {
 	}
 };
 
-//'false' cast to get walls where there are none, to render spaces between walls in a lazy inefficient manner
-Map.prototype.cast2 = function(point, angle, range) {
-	var self = this;
-	var sin = Math.sin(angle);
-	var cos = Math.cos(angle);
-	var noWall = { length2: Infinity };
-
-	return ray({ x: point.x, y: point.y, height: 0, distance: 0 });
-
-	function ray(origin) {
-	  var stepX = step(sin, cos, origin.x, origin.y);
-	  var stepY = step(cos, sin, origin.y, origin.x, true);
-	  var nextStep = stepX.length2 < stepY.length2
-		? inspect(stepX, 1, 0, origin.distance, stepX.y)
-		: inspect(stepY, 0, 1, origin.distance, stepY.x);
-
-	  if (nextStep.distance > range) return [origin];
-	  return [origin].concat(ray(nextStep));
-	}
-
-	function step(rise, run, x, y, inverted) {
-	  if (run === 0) return noWall;
-	  var dx = run > 0 ? Math.floor(x + 1) - x : Math.ceil(x - 1) - x;
-	  var dy = dx * (rise / run);
-	  return {
-		x: inverted ? y + dy : x + dx,
-		y: inverted ? x + dx : y + dy,
-		length2: dx * dx + dy * dy
-	  };
-	}
-
-	function inspect(step, shiftX, shiftY, distance, offset) {
-	  var dx = cos < 0 ? shiftX : 0;
-	  var dy = sin < 0 ? shiftY : 0;
-		
-		// (0 + 1) mod 2 = 1, (1+1) mod 2 = 0, inverting map.get() results
-	  step.height = (self.get(step.x - dx, step.y - dy) + 1) % 2; 
-		
-	  step.distance = distance + Math.sqrt(step.length2);
-	  if (shiftX) step.shading = cos < 0 ? 2 : 0;
-	  else step.shading = sin < 0 ? 2 : 1;
-	  step.offset = offset - Math.floor(offset);
-	  return step;
-	}
-};
-
 Map.prototype.update = function(seconds) {
+  //Do lightning effect randomly about every 10s
 	if (this.light > 0) this.light = Math.max(this.light - 10 * seconds, 0);
 	else if (Math.random() * 5 < seconds) this.light = 2;
 	
-	//TODO: Update projectile position
+	//TODO: Update enemy positions when enemies are done
 };
 
 /** Camera **/
@@ -279,7 +276,6 @@ function Camera(canvas, resolution, fov) {
 
 Camera.prototype.render = function(player, map, seconds) {
 	this.drawSky(player.direction, map.skybox, map.light);
-	//this.drawTerrain(player.direction, map.groundTexture, map.light);
 	this.drawColumns(player, map);
 	this.drawMissile(player);
 	this.drawWeapon(player.weapon, player.paces);
@@ -309,11 +305,7 @@ Camera.prototype.drawColumns = function(player, map) {
 	for (var column = 0; column < this.resolution; column++) {
 	  var angle = this.fov * (column / this.resolution - 0.5);
 	  var ray = map.cast(player, player.direction + angle, this.range);
-	  this.drawColumn(column, ray, angle, map);
-		
-		// var ray = map.cast2(player, player.direction + angle, this.range);
-	  // this.drawColumn2(column, ray, angle, map);
-		
+	  this.drawColumn(column, ray, angle, map, player);
 	}
 	
 	this.ctx.restore();
@@ -329,10 +321,9 @@ Camera.prototype.drawWeapon = function(weapon, paces) {
 };
 
 /** 
- Let's add a draw terrain function
- This ver does one big image, reusing the skybox code.
- TODO: try drawing tiles like the walls but for the floor. 
- This would give it a sense of scale and movement that the current ver does not have. 
+ Deprecated
+ Draws terrain as one big image. Does not give a sense of movement.
+ Just use draw column now, which will draw floor tiles.
 **/
 Camera.prototype.drawTerrain = function(direction, texture, ambient) {
 	var width = this.width * (CIRCLE / this.fov);
@@ -356,13 +347,13 @@ Camera.prototype.drawMissile = function(player){
 	var ctx = this.ctx;
 	var missile = player.weapon.missile.missileBM;
 	
-	var rate = 0.75;
+	var rate = player.weapon.missile.velocity;
 	var width = missile.width / (player.framesSinceFire * rate);
 	var height = missile.height / (player.framesSinceFire * rate);
 	var left = this.width * 0.5;
 	var top = this.height * 0.5;
 	
-	if (player.framesSinceFire < 120){ //draw missile for 2 or so seconds, modified by frame rate and rate var above
+	if (player.framesSinceFire < 10){ //draw missile for 2 or so seconds, modified by frame rate and rate var above
 		// ctx.fillStyle = '#bbbbbb';
 		// ctx.globalAlpha = 1;
 		// ctx.fillRect(left, top, width, height);
@@ -388,14 +379,14 @@ Camera.prototype.drawMissile = function(player){
    Missiles will cease upon collision with a wall, upon which an explosion will occur.
 */
 
-Camera.prototype.drawColumn = function(column, ray, angle, map) {
+Camera.prototype.drawColumn = function(column, ray, angle, map, player) {
 	var ctx = this.ctx;
 	var texture = map.wallTexture;
 	var left = Math.floor(column * this.spacing);
 	var width = Math.ceil(this.spacing);
 	var hit = -1;
 	
-	//Increment hit till first ray element that is a wall
+	// Increment hit till first ray element that is a wall
 	while (++hit < ray.length && ray[hit].height <= 0);
 
 	for (var s = ray.length - 1; s >= 0; s--) {
@@ -406,126 +397,52 @@ Camera.prototype.drawColumn = function(column, ray, angle, map) {
 	  var textureX = Math.floor(texture.width * step.offset);
 		var wall = this.project(step.height, angle, step.distance);
 		
-		var ground = wall;
-		var groundX = textureX;
-		if(s > 1){
-			ground = this.project(1, angle, ray[s-1].distance);
-			groundX = Math.floor(groundBM.width * ray[s-1].offset);
-		}
-		
-		
 		// Draw wall if ray hit a wall in this increment. All increments before are spaces
 	  if (s === hit) {
 		
       ctx.globalAlpha = 1;
       
       //Draw wall
-			
       ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left, wall.top, width, wall.height);
       
-			// //Draw ground under wall
-			// ctx.drawImage(groundBM.image, textureX, 0, 1, groundBM.height, left, wall.top+wall.height, width, wall.height);
+			//Apply alpha distance effect to walls
 			ctx.save();
       ctx.fillStyle = '#000000';
       ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
       ctx.fillRect(left, wall.top, width, wall.height);
-			ctx.restore();//so when we draw ground below it doesn't have a weird artifact generation
+			ctx.restore();
 	  }
 		
-		if(s > 1){//do not draw around player's head
-		
-		
-				
-			//Draw ground (EDIT: successfully renders ceiling...LOL)
-			ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top-ground.height, width, ground.height);
+		// Draw ground tiles in spaces between walls
+		var ground = wall;
+		var groundX = textureX;
+		if(s > 1){//do not draw around player's head, blocks view
+			ground = this.project(1, angle, ray[s-1].distance);
+			groundX = Math.floor(groundBM.width * ray[s-1].offset);
 			
-			ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top+(ground.height * 1), width, ground.height);
-			
-			// if(s > 1){
-				// ctx.fillStyle = '#000000';
-				// ctx.globalAlpha = Math.max((ray[s-1].distance + ray[s-1].shading) / this.lightRange - map.light, 0);
-				// ctx.fillRect(left, ground.top+(ground.height*1.7), width, ground.height);
-			// }
-		}
-		// else{
-			// //Draw ground (EDIT: successfully renders ceiling...LOL)
+			// //Draw ceiling
 			// ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top-ground.height, width, ground.height);
-		// }
-	  
-		//image, sx, sy, swidth, sheight, x, y, widthClip, heightClip
+			
+			//Draws ground
+			ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top+(ground.height * 1),width, ground.height);
+			
+			//TODO: apply same alpha effect to ground
+		}
 		
-		//Try drawing "ground" test
-		//ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left+width, wall.top+wall.height, width, wall.height);
-
+		//Draw missile
+		var missile = player.weapon.missile.missileBM;
+		var rate = player.weapon.missile.velocity;
+		var missileP = this.project(1, angle, step.distance);
+		var missileX = Math.floor(missileBM.width * step.offset);
+		
+		if (player.weapon.missile.alive){ 
+			ctx.drawImage(missile.image, missileX, 0, 1, missile.height, left, missileP.top, width, height);
+		}
+		
+		// // Draw some rain
 	  // ctx.fillStyle = '#ffffff';
 	  // ctx.globalAlpha = 0.15;
 	  // while (--rainDrops > 0) ctx.fillRect(left, Math.random() * rain.top, 1, rain.height);
-	}
-};
-
-
-Camera.prototype.drawColumn2 = function(column, ray, angle, map) {
-	var ctx = this.ctx;
-	var texture = groundBM;
-	var left = Math.floor(column * this.spacing);
-	var width = Math.ceil(this.spacing);
-	var hit = -1;
-	
-	while (++hit < ray.length && ray[hit].height <= 0);
-
-	for (var s = ray.length - 1; s >= 0; s--) {
-	  var step = ray[s];
-	  
-
-	  var textureX = Math.floor(texture.width * step.offset);
-		var wall = this.project(step.height, angle, step.distance);
-	  
-	  if (s === hit) {
-		
-      ctx.globalAlpha = 1;
-      
-      //Draw wall
-			
-      ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left, wall.top+wall.height, width, wall.height);
-      
-      ctx.fillStyle = '#000000';
-      ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
-      ctx.fillRect(left, wall.top, width, wall.height);
-	  }
-	  
-
-	 
-	}
-};
-
-//try 2 types of walls, 1 just rendered shorter and everywhere
-//requires 'false' raycasting to collide with wall at every grid point
-Camera.prototype.drawRow = function(column, ray, angle, map) {
-	var ctx = this.ctx;
-	var texture = map.wallTexture;
-	var left = Math.floor(column * this.spacing);
-	var width = Math.ceil(this.spacing);
-	var hit = -1;
-	
-	while (++hit < ray.length && ray[hit].height <= 0);
-
-	for (var s = ray.length - 1; s >= 0; s--) {
-	  var step = ray[s];
-
-	  var textureY = Math.floor(texture.height * step.offset);
-		var wall = this.project(step.height, angle, step.distance);
-	  
-	  if (s === hit) {
-		
-      ctx.globalAlpha = 1;
-      //Draw wall
-      ctx.drawImage(texture.image, 0, textureY, texture.height, 1, left, wall.top, width, wall.height);
-      
-     
-	  }
-	  
-
-	  
 	}
 };
 
@@ -563,7 +480,7 @@ GameLoop.prototype.frame = function(time) {
 
 // Create each object
 var display = document.getElementById('display');
-var missile = new Missile(0, 0, Math.PI * 0.3, missileBM);
+var missile = new Missile(0, 0, Math.PI * 0.3, 3, missileBM);
 var weapon = new Weapon(weaponBM, missile);
 var player = new Player(15.3, -1.2, Math.PI * 0.3, weapon);
 var map = new Map(16, wallBM, skyBM, groundBM);
