@@ -44,10 +44,10 @@ function Controls() {
 Controls.prototype.onTouch = function(e) {
 	var t = e.touches[0];
 	this.onTouchEnd(e);
-	if (t.pageY < window.innerHeight * 0.5) this.onKey(true, { keyCode: 38 }); //forward
-	else if (t.pageX < window.innerWidth * 0.5) this.onKey(true, { keyCode: 37 }); //left
-	else if (t.pageY > window.innerWidth * 0.5) this.onKey(true, { keyCode: 39 }); //right
-	else if (t.pageY > window.innerHeight * 0.5) this.onKey(true, { keyCode: 96}); //touch bottom half of screen, fire
+	if (t.pageY < window.innerHeight * 0.4) this.onKey(true, { keyCode: 38 }); //forward
+	else if (t.pageX < window.innerWidth * 0.4) this.onKey(true, { keyCode: 37 }); //left
+	else if (t.pageX > window.innerWidth * 0.6) this.onKey(true, { keyCode: 39 }); //right
+	else if (t.pageY > window.innerHeight * 0.6) this.onKey(true, { keyCode: 40}); //backward
 };
 
 Controls.prototype.onTouchEnd = function(e) {
@@ -120,7 +120,10 @@ Player.prototype.update = function(controls, map, seconds) {
 	//TODO: If {weapon switch} then change weapons
 	
 	//Update player's active missiles
-	player.weapon.missile.update(controls, map, seconds);
+	if(player.weapon.missile.alive){
+		player.weapon.missile.update(map, seconds);
+	  player.framesSinceFire++;
+	}
 	
 };
 
@@ -146,9 +149,9 @@ function Missile(x, y, direction, velocity, missileBM){
 	this.direction = direction;
 	this.velocity = velocity;
 	this.missileBM = missileBM;
+	this.distance = 0;
 	
 	this.alive = false;
-	this.framesSinceFired = 1000;
 	this.lifetime = 0;
 	
 }
@@ -164,26 +167,38 @@ Missile.prototype.fire = function(x, y, direction, lifetime){
 Missile.prototype.update = function(map, seconds){
   //Move missile in direction at a rate some fraction quicker than the player
 	if(this.alive){
-		this.travel(3 * seconds * this.velocity, map);
+		this.travel(seconds * this.velocity, map);
 	}
 };
 
 Missile.prototype.travel = function(distance, map){
-	var dx = Math.cos(this.direction) * distance;
-	var dy = Math.sin(this.direction) * distance;
+  var cos = Math.cos(this.direction);
+	var sin = Math.sin(this.direction);
+	var dx = cos * distance;
+	var dy = sin * distance;
 	
 	//If no wall in path, travel forward. This can be modified to have bouncing projectiles!
-	if(map.get(this.x + dx, this.y) <= 0 
-	&& map.get(this.x, this.y + dy) <= 0){
-	
-	  this.x += dx;
+	if( this.alive && map.get(this.x + dx, this.y) <= 0 && map.get(this.x, this.y + dy) <= 0){
+		this.x += dx;
 		this.y += dy;
-		this.lifetime--;
+		this.lifetime -= 1;
+		this.distance += distance; //increase distance from player
 	}
 	else{//we hit a wall!
-		this.alive = false;
+		this.reset()
 		//TODO: spawn explosion
 	}
+	
+	if(this.lifetime < 0){
+	  this.reset();
+	}
+	
+};
+
+Missile.prototype.reset = function(){
+  this.distance = 0;
+	this.alive = false;
+	this.lifetime = 0;
 };
 
 /** Map **/
@@ -203,6 +218,22 @@ Map.prototype.get = function(x, y){
 		return -1;
 		
 	return this.wallGrid[ y * this.size + x ];
+};
+
+// True if (x,y) and (s,t) reside in same grid
+Map.prototype.check = function(x, y, s, t){
+  x = Math.floor(x);
+	y = Math.floor(y);
+	s = Math.floor(s);
+	t = Math.floor(t);
+	
+	if(x < 0 || x > this.size - 1 || y < 0 || y > this.size - 1 || s < 0 || s > this.size - 1 || t < 0 || t > this.size - 1 )
+	  return false;
+		
+	if(x === s && y === t)
+		return true;
+		
+	return false;
 };
 
 Map.prototype.randomize = function() {
@@ -276,8 +307,9 @@ function Camera(canvas, resolution, fov) {
 
 Camera.prototype.render = function(player, map, seconds) {
 	this.drawSky(player.direction, map.skybox, map.light);
+	this.drawTerrain(player.direction, sand, map.light);
 	this.drawColumns(player, map);
-	this.drawMissile(player);
+	//this.drawMissile(player);//Old missile function
 	this.drawWeapon(player.weapon, player.paces);
 	
 };
@@ -306,6 +338,7 @@ Camera.prototype.drawColumns = function(player, map) {
 	  var angle = this.fov * (column / this.resolution - 0.5);
 	  var ray = map.cast(player, player.direction + angle, this.range);
 	  this.drawColumn(column, ray, angle, map, player);
+		//this.drawMissile2(column, ray, angle, map, player);
 	}
 	
 	this.ctx.restore();
@@ -358,12 +391,40 @@ Camera.prototype.drawMissile = function(player){
 		// ctx.globalAlpha = 1;
 		// ctx.fillRect(left, top, width, height);
 		ctx.drawImage(missile.image, left, top, width, height);
-		player.framesSinceFire++;
+		
 	}
 	else
 	{
 		player.framesSinceFire = 1000;
 	}
+};
+
+/** Find difference in angle of ray, and angle from player to missile, and adjust draw **/
+Camera.prototype.drawMissile2 = function(column, ray, angle, map, player){
+
+  var ctx = this.ctx;
+	var left = Math.floor(column * this.spacing);
+  var hit = -1;
+	while (++hit < ray.length && ray[hit].height <= 0);
+	
+	for(var s = ray.length - 1; s >= 0; s--){
+		var step = ray[s];
+		
+		var missile = player.weapon.missile;
+		var missileBM = missile.missileBM;
+		var rate = missile.velocity;
+		var scale = missile.lifetime / 120;
+		var missileP = this.project2(1, 1, angle, missile.distance);
+		var missileX = Math.floor(missileBM.width * step.offset);
+		
+		if ( s > 1 && s != hit && player.weapon.missile.alive  && map.check(missile.x, missile.y, step.x, step.y)  ){
+			ctx.save();
+			ctx.drawImage(missileBM.image, missileX, 0, 1, missileBM.height, left, missileP.top, missileP.width, missileP.height);
+			ctx.restore();
+		}
+	}
+	
+	
 };
 
 //TODO: reuse ray cast code to cast a ray at time of weapon fire
@@ -406,11 +467,11 @@ Camera.prototype.drawColumn = function(column, ray, angle, map, player) {
       ctx.drawImage(texture.image, textureX, 0, 1, texture.height, left, wall.top, width, wall.height);
       
 			//Apply alpha distance effect to walls
-			ctx.save();
-      ctx.fillStyle = '#000000';
-      ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
-      ctx.fillRect(left, wall.top, width, wall.height);
-			ctx.restore();
+			// ctx.save();
+      // ctx.fillStyle = '#000000';
+      // ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
+      // ctx.fillRect(left, wall.top, width, wall.height);
+			// ctx.restore();
 	  }
 		
 		// Draw ground tiles in spaces between walls
@@ -420,23 +481,33 @@ Camera.prototype.drawColumn = function(column, ray, angle, map, player) {
 			ground = this.project(1, angle, ray[s-1].distance);
 			groundX = Math.floor(groundBM.width * ray[s-1].offset);
 			
-			// //Draw ceiling
-			// ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top-ground.height, width, ground.height);
+			//Draw ceiling
+			//ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top-ground.height, width, ground.height);
 			
 			//Draws ground
-			ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top+(ground.height * 1),width, ground.height);
+			//ctx.drawImage(groundBM.image, groundX, 0, 1, groundBM.height, left, ground.top+ground.height, width, ground.height);
 			
-			//TODO: apply same alpha effect to ground
+			//Apply alpha distance effect to ground. 
+			// BUG: Ground & ceiling alpha shading causes fps drop.
+			// TODO: Find work around fps drop or remove/reduce effect. Might clear up when ground is made up of horizontal tiles rather than vertical for 1/4 of the current draw calls.
+			// ctx.save();
+      // ctx.fillStyle = '#000000';
+      // ctx.globalAlpha = Math.max((ray[s-1].distance + ray[s-1].shading) / this.lightRange - map.light, 0);
+      // ctx.fillRect(left, ground.top+ground.height, width, ground.height);//ground alpha
+			// ctx.fillRect(left, ground.top-ground.height, width, ground.height);//ceiling alpha
+			// ctx.restore();
+			
 		}
 		
 		//Draw missile
-		var missile = player.weapon.missile.missileBM;
-		var rate = player.weapon.missile.velocity;
-		var missileP = this.project(1, angle, step.distance);
+		var missile = player.weapon.missile;
+		var missileBM = missile.missileBM;
+		var missileP = this.project2(1, 1, angle, missile.distance);
 		var missileX = Math.floor(missileBM.width * step.offset);
 		
-		if (player.weapon.missile.alive){ 
-			ctx.drawImage(missile.image, missileX, 0, 1, missile.height, left, missileP.top, width, height);
+		if ( s > 1 && s != hit && player.weapon.missile.alive && map.check(missile.x, missile.y, step.x, step.y)  ){
+			
+			ctx.drawImage(missileBM.image, missileX, 0, 1, missileBM.height, left, missileP.top, missileP.width, missileP.height);
 		}
 		
 		// // Draw some rain
@@ -446,6 +517,7 @@ Camera.prototype.drawColumn = function(column, ray, angle, map, player) {
 	}
 };
 
+/** For projecting wall texture to find varying draw height for distance from player **/
 Camera.prototype.project = function(height, angle, distance) {
 	var z = distance * Math.cos(angle);
 	var wallHeight = this.height * height / z;
@@ -456,8 +528,19 @@ Camera.prototype.project = function(height, angle, distance) {
 	}; 
 };
 
-//TODO: I need a diff project function to calc a floor tile sizing
-
+/** For projecting any texture to find varying height and width (in fractions of wall spacing) for distance from player, e.g., missiles fired **/
+Camera.prototype.project2 = function(height, width, angle, distance){
+  var z = distance * Math.cos(angle); // distance adjusted to look correct
+	var h = this.height * height / z;
+	var w = this.width * width / z;
+	
+	var bottom = this.height / 2 * (1 + 1 / z);
+	return{
+	  top: bottom - h,
+		width: w,
+		height: h
+	};
+};
 
 /** GameLoop **/
 function GameLoop() {
@@ -480,7 +563,7 @@ GameLoop.prototype.frame = function(time) {
 
 // Create each object
 var display = document.getElementById('display');
-var missile = new Missile(0, 0, Math.PI * 0.3, 3, missileBM);
+var missile = new Missile(0, 0, Math.PI * 0.3, 2, missileBM);
 var weapon = new Weapon(weaponBM, missile);
 var player = new Player(15.3, -1.2, Math.PI * 0.3, weapon);
 var map = new Map(16, wallBM, skyBM, groundBM);
