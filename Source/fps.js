@@ -163,6 +163,7 @@ function Missile(x, y, direction, velocity, missileBM){
 }
 
 Missile.prototype.fire = function(x, y, direction, lifetime){
+	console.log("Missile fired: (" + x + ", " + y + "), " + direction + ", " + lifetime);
 	this.x = x;
 	this.y = y;
 	this.direction = direction;
@@ -234,11 +235,12 @@ function Enemy(velocity, health, damage, enemyBM){
 	this.enemyBM = enemyBM;
 	this.alive = false;
 	this.paces = 0; //track overall movement to get an idea of time alive
-	this.distance = 0; //from player
-	
+	this.distance = 1000; //from player
+
 }
 
 Enemy.prototype.spawn = function(x, y, direction){
+	console.log("Enemy spawned: (" + x + ", " + y + "), " + direction);
 	this.x = x;
 	this.y = y;
 	this.direction = direction;
@@ -301,8 +303,12 @@ Enemy.prototype.attack = function(player, distance, map){
 };
 
 Enemy.prototype.update = function(map, seconds, player){
-	var d = seconds * this.velocity;
-	this.walk(player, d, map);
+	//Calculate distance to move
+	var distance = seconds * this.velocity;
+	this.walk(player, distance, map);
+	
+	//Update distance from player
+	this.distance = map.distance(player, this, map);
 };
 
 /** Map **/
@@ -399,28 +405,28 @@ Map.prototype.distance = function(a, b){
 
 //TODO: Fix weird javascript lack of casting objects from arrays and finding element function. For now 'array' is really single enemy
 Map.prototype.spawn = function(enemyArray){
-	// var area = this.size * this.size;
-	// var spawnSpace = 0.7 * area;
-	// var PR = [enemyArray].length / spawnSpace;
-	// var j = 0;
+	console.log("In Map.spawn()");
+	var area = this.size * this.size;
+	var spawnSpace = 0.7 * area;
+	var PR = enemyArray.length / spawnSpace;
+	var j = 0;
 	
-	// for(var i = 0; i < area; i++){
-		// if(this.wallGrid[i] === 0 && Math.random() < PR){
-			// // i = y * size + x, so y is multiple of sizes, and x remainder
-			// var y = Math.floor(i / this.size);
-			// var x = this.size - y;
-			// var e = new Enemy(0, 0, 0, enemyBM); 
-			// e = enemyArray[j];
-			// Enemy.prototype.spawn.call(e, x, y, 1);//e.spawn(x, y, 1);//direction will change immediately so 0 at start is fine
-			// j++;
+	for(var i = 0; i < area; i++){
+		if(this.wallGrid[i] === 0 && Math.random() < PR){
+			// i = y * size + x, so y is multiple of sizes, and x remainder
+			var y = Math.floor(i / this.size);
+			var x = this.size - y;
+			var e = new Enemy(0, 0, 0, enemyBM); 
+			e = enemyArray[j];
+			Enemy.prototype.spawn.call(e, x, y, 1);//e.spawn(x, y, 1);//direction will change immediately so 0 at start is fine
+			j++;
 			
-			// if(j >= enemyArray.length)
-				// break;
-		// }
+			if(j >= enemyArray.length)
+				break;
+		}
 		
-	// }
+	}
 	
-	enemyArray.spawn(25, 3, 1);
 };
 
 Map.prototype.update = function(seconds) {
@@ -444,17 +450,15 @@ function Camera(canvas, resolution, fov) {
 	this.scale = (this.width + this.height) / 1200;
 }
 
-Camera.prototype.render = function(player, enemyArray, map, seconds) {
+Camera.prototype.render = function(player, enemies, map, seconds) {
 	this.drawSky(player.direction, map.skybox, map.light);
 	this.drawTerrain(player.direction, groundBM, map.light);
 	this.drawColumns(player, map);
 	
-	// for(var i = 0; i < enemyArray.length; i++){
-		// this.drawEnemy(player, enemyArray[i], map);
-	// }
-	
-	this.drawEnemy(player, enemyArray, map);
-	
+	for(var i = 0; i < enemies.length; i++){
+		this.drawEnemy(player, enemies[i], map);
+	}
+		
 	this.drawMissile(player, map);
 	this.drawWeapon(player.weapon, player.paces);
 	this.drawReticle(reticleBM);
@@ -550,9 +554,7 @@ Camera.prototype.drawMissile = function(player, map){
 	//If missile behind wall, don't draw
 	if(hit < ray.length)
 		return;
-	
-	console.log("drawing missile");
-	
+		
 	var step = ray[ ray.length - 1 ];
 		
 	var missileP = this.project(1, angle, missile.distance);
@@ -592,7 +594,7 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 		
 	angle = dAngle;
 	
-	var distance = map.distance(player, enemy);
+	var distance = enemy.distance;
 	if(distance > this.range)
 		return;
 	
@@ -603,19 +605,17 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	//If enemy behind wall, don't draw
 	if(hit < ray.length)
 		return;
-	
-	console.log("drawing enemy");
-	
+		
 	var step = ray[ ray.length - 1 ];
 		
 	var enemyP = this.project(1, angle, distance);
 	var enemyX = Math.floor(enemyBM.width * step.offset);
-	var width = Math.floor(enemyBM.width / (1 + 2 * distance));
-	var height = Math.floor(enemyBM.height / (1 + 2 * distance));
+	var width = Math.floor(enemyBM.width);
+	var height = Math.floor(enemyBM.height);
 	
 	var column = this.resolution * (angle / this.fov + 0.5);
 	var left = this.width - Math.floor(column * this.spacing) - enemyBM.width / (4 + distance);
-	var top = Math.floor(this.height * 0.6) - enemyBM.height / (2 + distance);//center on gun muzzle
+	var top = Math.floor(this.height * 0.6) - enemyBM.height / (2 + distance);
 	
 	//debugger;
 	ctx.drawImage(enemyBM.image, left, top, width, height);
@@ -759,20 +759,30 @@ GameLoop.prototype.frame = function(time) {
 var display = document.getElementById('display');
 var missile = new Missile(0, 0, Math.PI * 0.3, 6, missileBM);
 var weapon = new Weapon(weaponBM, missile);
-var player = new Player(15.3, -1.2, Math.PI * 0.3, weapon);
+var player = new Player(15.3, -1.5, 0, weapon);
 var map = new Map(16, wallBM, skyBM, groundBM);
 var controls = new Controls();
 var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
-var enemy = new Enemy(2, 100, 100, enemyBM);
+var enemies = [];
+var enemyCount = 5;
+
+for(var i = 0; i < enemyCount; i++){
+	enemies.push(new Enemy(20, -1, 100, enemyBM));
+}
+
 map.randomize();
-map.spawn(enemy);
+map.spawn(enemies);
 
 // Start Game
 loop.start(function frame(seconds) {
 	map.update(seconds);
 	player.update(controls.states, map, seconds);
-	enemy.update(map, seconds, player);
-	camera.render(player, enemy, map, seconds);
+	
+	for(var i = 0; i < enemyCount; i++){
+		Enemy.prototype.update.call(enemies[i], map, seconds, player);//Treat enemies[i] elem as Enemy type, and call function with elem as 'this'
+	}
+	
+	camera.render(player, enemies, map, seconds);
 });
