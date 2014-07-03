@@ -32,6 +32,7 @@ var groundBM = sand;
 var weaponBM = ripper;
 var missileBM = heart;
 var reticleBM = reticle;
+var enemyBM = confused;
 
 
 /** Control Object **/
@@ -87,7 +88,7 @@ function Player(x, y, direction, weapon){
 	this.y = y;
 	this.direction = direction;
 	this.weapon = weapon;
-	this.paces = 0;
+	this.paces = 0; //distance traveled overall
 	this.framesSinceFire = 1000;//remove after new missile code works
 }
 
@@ -224,6 +225,86 @@ Missile.prototype.reset = function(){
 	missileBM = heart;
 };
 
+/** Enemy **/
+function Enemy(velocity, health, damage, enemyBM){
+	
+	this.velocity = velocity;
+	this.health = health;
+	this.damage = damage;
+	this.enemyBM = enemyBM;
+	this.alive = false;
+	this.paces = 0; //track overall movement to get an idea of time alive
+	this.distance = 0; //from player
+	
+}
+
+Enemy.prototype.spawn = function(x, y, direction){
+	this.x = x;
+	this.y = y;
+	this.direction = direction;
+	this.alive = true;
+	
+};
+
+//TODO: give some enemies the ability to slowly rotate to face player before moving to avoid suddenly spinning about
+Enemy.prototype.rotate = function(angle){
+	this.direction = (this.direction + angle + CIRCLE)%(CIRCLE);
+};
+
+
+//TODO: remember previous distance to player, and if no progress is made do random walk. Even better, think of a full A.I. pathing system.
+Enemy.prototype.walk = function(player, distance, map){
+
+	//Ask if player is nearby, and if so walk towards player
+	if(map.distance(player, this) < 5){
+		this.attack(player, distance, map);
+	}
+	else{	//Else walk in random direction
+		var c = Math.floor(Math.random() * 4) / 4;
+		this.direction = CIRCLE * c;
+		
+		var dx = Math.cos(this.direction) * distance;
+		var dy = Math.sin(this.direction) * distance;
+		
+		//Skirt walls
+		if (map.get(this.x + dx, this.y) <=0) 
+			this.x += dx;
+		if (map.get(this.x, this.y + dy) <=0)
+			this.y += dy;
+			
+		this.paces += distance;//Increase paces by distance travelled
+	}
+};
+
+Enemy.prototype.attack = function(player, distance, map){
+
+	var diffX = this.x - player.x;
+	var diffY = this.y - player.y;
+	
+	//Note: atan2() udf at diffX = 0, diffY <= 0, i.e. player is directly south of this enemy
+	if(diffX === 0, diffY <= 0)
+		this.direction = 1.5 * Math.PI;
+	else
+		this.direction = Math.atan2(diffY, diffX);
+	
+	//We'll travel towards player
+	var dx = Math.cos(this.direction) * distance;
+	var dy = Math.sin(this.direction) * distance;
+	
+	//Skirt walls
+	if (map.get(this.x + dx, this.y) <=0) 
+		this.x += dx;
+	if (map.get(this.x, this.y + dy) <=0)
+		this.y += dy;
+		
+	this.paces += distance;
+};
+
+Enemy.prototype.update = function(map, seconds, player){
+	var d = seconds * this.velocity;
+	this.walk(player, d, map);
+};
+
 /** Map **/
 function Map(size, wallBM, skyBM, groundBM){
 	this.size = size;
@@ -316,6 +397,32 @@ Map.prototype.distance = function(a, b){
 	return d;
 };
 
+//TODO: Fix weird javascript lack of casting objects from arrays and finding element function. For now 'array' is really single enemy
+Map.prototype.spawn = function(enemyArray){
+	// var area = this.size * this.size;
+	// var spawnSpace = 0.7 * area;
+	// var PR = [enemyArray].length / spawnSpace;
+	// var j = 0;
+	
+	// for(var i = 0; i < area; i++){
+		// if(this.wallGrid[i] === 0 && Math.random() < PR){
+			// // i = y * size + x, so y is multiple of sizes, and x remainder
+			// var y = Math.floor(i / this.size);
+			// var x = this.size - y;
+			// var e = new Enemy(0, 0, 0, enemyBM); 
+			// e = enemyArray[j];
+			// Enemy.prototype.spawn.call(e, x, y, 1);//e.spawn(x, y, 1);//direction will change immediately so 0 at start is fine
+			// j++;
+			
+			// if(j >= enemyArray.length)
+				// break;
+		// }
+		
+	// }
+	
+	enemyArray.spawn(25, 3, 1);
+};
+
 Map.prototype.update = function(seconds) {
   //Do lightning effect randomly about every 10s
 	if (this.light > 0) this.light = Math.max(this.light - 10 * seconds, 0);
@@ -337,10 +444,17 @@ function Camera(canvas, resolution, fov) {
 	this.scale = (this.width + this.height) / 1200;
 }
 
-Camera.prototype.render = function(player, map, seconds) {
+Camera.prototype.render = function(player, enemyArray, map, seconds) {
 	this.drawSky(player.direction, map.skybox, map.light);
 	this.drawTerrain(player.direction, groundBM, map.light);
 	this.drawColumns(player, map);
+	
+	// for(var i = 0; i < enemyArray.length; i++){
+		// this.drawEnemy(player, enemyArray[i], map);
+	// }
+	
+	this.drawEnemy(player, enemyArray, map);
+	
 	this.drawMissile(player, map);
 	this.drawWeapon(player.weapon, player.paces);
 	this.drawReticle(reticleBM);
@@ -452,6 +566,59 @@ Camera.prototype.drawMissile = function(player, map){
 	
 	//debugger;
 	ctx.drawImage(missileBM.image, left, top, width, height);
+};
+
+Camera.prototype.drawEnemy = function(player, enemy, map){
+
+	if(!enemy.alive)
+		return;
+		
+	var ctx = this.ctx;
+	
+	//If missile direction and player direction differ too much, don't draw
+	var diffX = player.x - enemy.x;
+	var diffY = player.y - enemy.y;
+	var angle = 0;
+	
+	//Note: atan2() udf at diffX = 0, diffY <= 0, i.e. enemy is directly south of player
+	if(diffX === 0, diffY <= 0)
+		angle = 1.5 * Math.PI;
+	else
+		angle = Math.atan2(diffY, diffX);
+	
+	var dAngle = player.direction - angle;
+	if(dAngle > this.fov / 2)
+		return;
+		
+	angle = dAngle;
+	
+	var distance = map.distance(player, enemy);
+	if(distance > this.range)
+		return;
+	
+	var ray = map.cast(player, angle, distance);
+	var hit = -1;
+	while (++hit < ray.length && ray[hit].height <= 0);
+	
+	//If enemy behind wall, don't draw
+	if(hit < ray.length)
+		return;
+	
+	console.log("drawing enemy");
+	
+	var step = ray[ ray.length - 1 ];
+		
+	var enemyP = this.project(1, angle, distance);
+	var enemyX = Math.floor(enemyBM.width * step.offset);
+	var width = Math.floor(enemyBM.width / (1 + 2 * distance));
+	var height = Math.floor(enemyBM.height / (1 + 2 * distance));
+	
+	var column = this.resolution * (angle / this.fov + 0.5);
+	var left = this.width - Math.floor(column * this.spacing) - enemyBM.width / (4 + distance);
+	var top = Math.floor(this.height * 0.6) - enemyBM.height / (2 + distance);//center on gun muzzle
+	
+	//debugger;
+	ctx.drawImage(enemyBM.image, left, top, width, height);
 };
 
 Camera.prototype.drawReticle = function(texture){
@@ -598,11 +765,14 @@ var controls = new Controls();
 var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
+var enemy = new Enemy(2, 100, 100, enemyBM);
 map.randomize();
+map.spawn(enemy);
 
 // Start Game
 loop.start(function frame(seconds) {
 	map.update(seconds);
 	player.update(controls.states, map, seconds);
-	camera.render(player, map, seconds);
+	enemy.update(map, seconds, player);
+	camera.render(player, enemy, map, seconds);
 });
