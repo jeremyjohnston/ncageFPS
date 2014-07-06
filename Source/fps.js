@@ -100,9 +100,9 @@ Player.prototype.walk = function(distance, map){
 	var dx = Math.cos(this.direction) * distance;
 	var dy = Math.sin(this.direction) * distance;
 	
-	if (map.get(this.x + dx, this.y) <=0) 
+	if (map.get(this.x + dx, this.y) <=0 && this.x + dx >= 0 - map.offset && this.x + dx <= map.offset ) 
 		this.x += dx;
-	if (map.get(this.x, this.y + dy) <=0)
+	if (map.get(this.x, this.y + dy) <=0 && this.y + dy >= 0 - map.offset && this.y + dy <= map.offset)
 		this.y += dy;
 		
 	this.paces += distance;
@@ -305,7 +305,7 @@ Enemy.prototype.attack = function(player, distance, map){
 Enemy.prototype.update = function(map, seconds, player){
 	//Calculate distance to move
 	var distance = seconds * this.velocity;
-	this.walk(player, distance, map);
+	//this.walk(player, distance, map);
 	
 	//Update distance from player
 	this.distance = map.distance(player, this, map);
@@ -319,6 +319,7 @@ function Map(size, wallBM, skyBM, groundBM){
 	this.wallTexture = wallBM; //new Bitmap('nicolas-cage-expendables-3.jpg', 600, 397);
 	this.groundTexture = groundBM; // new Bitmap('nicolas-cage-expendables-3.jpg', 600, 397);
 	this.light = 0;
+	this.offset = 5 + this.size;//boundary offset from grid
 }
 
 Map.prototype.get = function(x, y){
@@ -328,6 +329,18 @@ Map.prototype.get = function(x, y){
 		return -1;
 		
 	return this.wallGrid[ y * this.size + x ];
+};
+
+/**
+	Returns (x, y) coordinate of gridpoint map.wallGrid[i]
+**/
+Map.prototype.getPoint = function(i){
+	// i = y * size + x, so y is multiple of sizes, and x remainder
+	
+	var u = i % this.size;
+	var v = (i - u) / this.size;
+	
+	return {x: u, y: v};
 };
 
 // True if (x,y) and (s,t) reside in same grid
@@ -414,11 +427,10 @@ Map.prototype.spawn = function(enemyArray){
 	for(var i = 0; i < area; i++){
 		if(this.wallGrid[i] === 0 && Math.random() < PR){
 			// i = y * size + x, so y is multiple of sizes, and x remainder
-			var y = Math.floor(i / this.size);
-			var x = this.size - y;
+			var point = this.getPoint(i);
 			var e = new Enemy(0, 0, 0, enemyBM); 
 			e = enemyArray[j];
-			Enemy.prototype.spawn.call(e, x, y, 1);//e.spawn(x, y, 1);//direction will change immediately so 0 at start is fine
+			Enemy.prototype.spawn.call(e, point.x, point.y, 1);//e.spawn(x, y, 1);//direction will change immediately so 0 at start is fine
 			j++;
 			
 			if(j >= enemyArray.length)
@@ -434,7 +446,6 @@ Map.prototype.update = function(seconds) {
 	if (this.light > 0) this.light = Math.max(this.light - 10 * seconds, 0);
 	else if (Math.random() * 5 < seconds) this.light = 2;
 	
-	//TODO: Update enemy positions when enemies are done
 };
 
 /** Camera **/
@@ -462,6 +473,8 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 	this.drawMissile(player, map);
 	this.drawWeapon(player.weapon, player.paces);
 	this.drawReticle(reticleBM);
+	
+	this.drawMinimap(player, enemies, map);
 	
 };
 
@@ -563,8 +576,8 @@ Camera.prototype.drawMissile = function(player, map){
 	var height = Math.floor(missileBM.height / (1 + 2 * missile.distance));
 	
 	var column = this.resolution * (angle / this.fov + 0.5);
-	var left = this.width - Math.floor(column * this.spacing) - missileBM.width / (4 + missile.distance);
-	var top = Math.floor(this.height * 0.6) - missileBM.height / (2 + missile.distance);//center on gun muzzle
+	var left = Math.floor(this.width - column * this.spacing - missileBM.width / (4 + missile.distance));
+	var top = Math.floor(this.height * 0.6 - missileBM.height / (2 + missile.distance));//center on gun muzzle
 	
 	//debugger;
 	ctx.drawImage(missileBM.image, left, top, width, height);
@@ -575,28 +588,34 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	if(!enemy.alive)
 		return;
 		
+	var distance = enemy.distance;
+	var limit = this.range * this.spacing;	
 	var ctx = this.ctx;
+	
+	if(distance > limit)
+		return;
 	
 	//If missile direction and player direction differ too much, don't draw
 	var diffX = player.x - enemy.x;
 	var diffY = player.y - enemy.y;
 	var angle = 0;
-	
-	//Note: atan2() udf at diffX = 0, diffY <= 0, i.e. enemy is directly south of player
-	if(diffX === 0, diffY <= 0)
-		angle = 1.5 * Math.PI;
-	else
-		angle = Math.atan2(diffY, diffX);
+	var bCorrection = false;
+	//Note: atan2() udf at diffX = 0, diffY = 0.
+	if(diffX != 0, diffY != 0)
+		angle = Math.atan2(diffY, diffX) - Math.PI;
+	if(angle < 0){
+		angle = 2 * Math.PI + angle;//correct for negative angles
+		bCorrection = true;
+	}
 	
 	var dAngle = player.direction - angle;
-	if(dAngle > this.fov / 2)
-		return;
-		
-	angle = dAngle;
 	
-	var distance = enemy.distance;
-	if(distance > this.range)
+	console.log("Player Angle: " + player.direction + ", Angle: " + angle + "Correction: " + bCorrection + ", Delta: " + dAngle + ", Distance: " + distance + ", Limit: " + limit);
+
+	if(Math.abs(dAngle) > this.fov / 2)
 		return;
+	
+	angle = dAngle;
 	
 	var ray = map.cast(player, angle, distance);
 	var hit = -1;
@@ -610,12 +629,13 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 		
 	var enemyP = this.project(1, angle, distance);
 	var enemyX = Math.floor(enemyBM.width * step.offset);
-	var width = Math.floor(enemyBM.width);
-	var height = Math.floor(enemyBM.height);
+	var factor = Math.abs(1 + 2 * distance);
+	var width = Math.floor(enemyBM.width / factor);
+	var height = Math.floor(enemyBM.height / factor);
 	
 	var column = this.resolution * (angle / this.fov + 0.5);
-	var left = this.width - Math.floor(column * this.spacing) - enemyBM.width / (4 + distance);
-	var top = Math.floor(this.height * 0.6) - enemyBM.height / (2 + distance);
+	var left = Math.floor(this.width - column * this.spacing - enemyBM.width / (4 + distance));
+	var top = Math.floor(this.height * 0.6 - enemyBM.height / (2 + distance));
 	
 	//debugger;
 	ctx.drawImage(enemyBM.image, left, top, width, height);
@@ -627,6 +647,47 @@ Camera.prototype.drawReticle = function(texture){
 	this.ctx.drawImage(texture.image, x, y, texture.width, texture.height);
 };
 
+Camera.prototype.drawMinimap = function(player, enemies, map){
+	this.ctx.save();
+	var size = 4;
+	var offset = map.offset + 5;
+	
+	//Find general direction player is facing
+	var vx = Math.cos(player.direction);
+	var vy = Math.sin(player.direction);
+
+	//Floor space of entire map grid
+	this.ctx.fillStyle = '#DDDDDD';
+	this.ctx.fillRect(0, 0, map.size * size + 2 * offset, map.size * size + 2 * offset);
+	
+	//Walls
+	for(var i = 0; i < map.size * map.size; i++){
+		var point = map.getPoint(i);
+		if(map.wallGrid[i] > 0){
+			this.ctx.fillStyle = '#000000';
+			this.ctx.fillRect(point.x * size + offset, point.y * size + offset, size, size);
+		}
+		
+	}
+	
+	//Enemy
+	this.ctx.fillStyle = '#FF0000';
+	for(var i = 0; i < enemies.length; i++){
+		this.ctx.fillRect(enemies[i].x * size + offset, enemies[i].y * size + offset, size/2, size/2);
+	}
+	
+	//Player, and player view direction
+	this.ctx.fillStyle = '#00FF00';
+	this.ctx.fillRect(player.x * size + offset, player.y * size + offset, size/2, size/2);
+	vx = player.x + vx;
+	vy = player.y + vy;
+	this.ctx.fillStyle = '#FFFF00';
+	this.ctx.fillRect(vx * size + offset, vy * size + offset, size/2, size/2);
+	//debugger;
+	
+	this.ctx.restore();
+	
+}; 
 
 /** 
 	Draws a single column of render. Right now only calculates for walls and rain.
@@ -766,7 +827,7 @@ var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
 var enemies = [];
-var enemyCount = 5;
+var enemyCount = 1;
 
 for(var i = 0; i < enemyCount; i++){
 	enemies.push(new Enemy(20, -1, 100, enemyBM));
