@@ -25,6 +25,9 @@ var bw = new Bitmap('../Assets/bw.jpg', 250, 202);
 var bwSeamless = new Bitmap('../Assets/seamlessBW_big.jpg', 2048, 1655);
 var sand = new Bitmap('../Assets/seamlessSand.jpg', 900, 900);
 
+// Enemy textures
+var bunny = new Bitmap('../Assets/bunnyCage.png', 627, 480);
+
 // Game Texture settings
 var skyBM = bwSeamless;
 var wallBM = bw;
@@ -32,7 +35,7 @@ var groundBM = sand;
 var weaponBM = ripper;
 var missileBM = heart;
 var reticleBM = reticle;
-var enemyBM = confused;
+var enemyBM = bunny;
 
 
 /** Control Object **/
@@ -261,21 +264,21 @@ Enemy.prototype.walk = function(player, distance, map){
 	if(map.distance(player, this) < 5){
 		this.attack(player, distance, map);
 	}
-	else{	//Else walk in random direction
-		var c = Math.floor(Math.random() * 4) / 4;
-		this.direction = CIRCLE * c;
+	// else{	//Else walk in random direction
+		// var c = Math.floor(Math.random() * 4) / 4;
+		// this.direction = CIRCLE * c;
 		
-		var dx = Math.cos(this.direction) * distance;
-		var dy = Math.sin(this.direction) * distance;
+		// var dx = Math.cos(this.direction) * distance;
+		// var dy = Math.sin(this.direction) * distance;
 		
-		//Skirt walls
-		if (map.get(this.x + dx, this.y) <=0) 
-			this.x += dx;
-		if (map.get(this.x, this.y + dy) <=0)
-			this.y += dy;
+		// //Skirt walls
+		// if (map.get(this.x + dx, this.y) <=0) 
+			// this.x += dx;
+		// if (map.get(this.x, this.y + dy) <=0)
+			// this.y += dy;
 			
-		this.paces += distance;//Increase paces by distance travelled
-	}
+		// this.paces += distance;//Increase paces by distance travelled
+	// }
 };
 
 Enemy.prototype.attack = function(player, distance, map){
@@ -305,7 +308,7 @@ Enemy.prototype.attack = function(player, distance, map){
 Enemy.prototype.update = function(map, seconds, player){
 	//Calculate distance to move
 	var distance = seconds * this.velocity;
-	//this.walk(player, distance, map);
+	this.walk(player, distance, map);
 	
 	//Update distance from player
 	this.distance = map.distance(player, this, map);
@@ -585,15 +588,19 @@ Camera.prototype.drawMissile = function(player, map){
 
 Camera.prototype.drawEnemy = function(player, enemy, map){
 
-	if(!enemy.alive)
+	if(!enemy.alive){
+		//console.debug("FAILED ALIVE CHECK");
 		return;
-		
+	}
+	
 	var distance = enemy.distance;
 	var limit = this.range * this.spacing;	
 	var ctx = this.ctx;
 	
-	if(distance > limit)
+	if(distance > limit){
+		//console.debug("FAILED DISTANCE < " + limit + " CHECK, distance: " + distance);
 		return;
+	}
 	
 	//If missile direction and player direction differ too much, don't draw
 	var diffX = player.x - enemy.x;
@@ -610,20 +617,25 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	
 	var dAngle = player.direction - angle;
 	
-	console.log("Player Angle: " + player.direction + ", Angle: " + angle + "Correction: " + bCorrection + ", Delta: " + dAngle + ", Distance: " + distance + ", Limit: " + limit);
+	//console.log("Player Angle: " + player.direction + ", Angle: " + angle + "Correction: " + bCorrection + ", Delta: " + dAngle + ", Distance: " + distance + ", Limit: " + limit);
 
-	if(Math.abs(dAngle) > this.fov / 2)
+	if(Math.abs(dAngle) - Math.PI/36 > this.fov / 2){//5 deg = pi/36 allowance
+		//console.debug("FAILED FOV CHECK, dAngle: " + dAngle);
 		return;
+	}
 	
+	
+	
+	var ray = map.cast(player, angle, distance);//cast ray from true angle, we know it is within fov
 	angle = dAngle;
-	
-	var ray = map.cast(player, angle, distance);
 	var hit = -1;
 	while (++hit < ray.length && ray[hit].height <= 0);
 	
 	//If enemy behind wall, don't draw
-	if(hit < ray.length)
+	if(hit < ray.length){
+		//console.debug("FAILED HIT CHECK, hit: " + hit);
 		return;
+	}
 		
 	var step = ray[ ray.length - 1 ];
 		
@@ -635,10 +647,16 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	
 	var column = this.resolution * (angle / this.fov + 0.5);
 	var left = Math.floor(this.width - column * this.spacing - enemyBM.width / (4 + distance));
-	var top = Math.floor(this.height * 0.6 - enemyBM.height / (2 + distance));
+	var top = Math.floor(enemyBM.height / (2 + distance));
 	
+	// console.log("Render Angle: " + angle 
+		// + ", Left: " + left 
+		// + ", Top: " + top
+		// + ", \nenemyX: " + enemyX
+		// + ", enemyP.top: " + enemyP.top
+		// + ", enemyP.height: " + enemyP.height);
 	//debugger;
-	ctx.drawImage(enemyBM.image, left, top, width, height);
+	ctx.drawImage(enemyBM.image, left, enemyP.top, width, enemyP.height);
 };
 
 Camera.prototype.drawReticle = function(texture){
@@ -827,10 +845,10 @@ var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
 var enemies = [];
-var enemyCount = 1;
+var enemyCount = 50;
 
 for(var i = 0; i < enemyCount; i++){
-	enemies.push(new Enemy(20, -1, 100, enemyBM));
+	enemies.push(new Enemy(1.5, 100, 100, enemyBM));
 }
 
 map.randomize();
