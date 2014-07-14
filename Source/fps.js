@@ -1,6 +1,21 @@
 // Code from http://www.playfuljs.com/a-first-person-engine-in-265-lines/
 // With modification by Jeremy Johnston
 //another good resource http://www.arguingwithmyself.com/demos/raycaster/raycaster5.html
+/*
+http://www.soundboard.com/sb/Nicolas_Cage_audio
+http://www.soundboard.com/sb/AdamWest65
+ *note: can't figure how to dl from soundboard.com
+http://www.moviesoundclips.net/people-details.php?id=22
+http://www.wavlist.com/movies/054/index.html
+Make ak pickup that uses ak47 lord of war clip on pickup :DDDDDD
+downside: this kills the bunnies :(
+
+OMG there is a conair bunny line. Maybe make the game goal to chase the
+bunnies "back in the box"?!
+Could be as simple as "kill" or "hit with bait" to teleport bunnies back into their "CAGE"!
+
+Boss spawn could use badman line from gone in 60 sec
+*/
 
 var CIRCLE = Math.PI * 2;
 var MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAgent)
@@ -853,6 +868,10 @@ for(var i = 0; i < enemyCount; i++){
 
 map.randomize();
 map.spawn(enemies);
+
+var audioAK = document.getElementById("ak");
+var audioBunny = document.getElementById("bunny");
+audioBunny.play();
 
 // Start Game
 loop.start(function frame(seconds) {
