@@ -43,6 +43,7 @@ var sand = new Bitmap('../Assets/seamlessSand.jpg', 900, 900);
 // Enemy textures
 var bunny = new Bitmap('../Assets/bunnyCage.png', 627, 480);
 
+
 // Game Texture settings
 var skyBM = bwSeamless;
 var wallBM = bw;
@@ -128,8 +129,18 @@ Player.prototype.walk = function(distance, map){
 
 Player.prototype.fire = function(seconds, map){
 	this.framesSinceFire = 1;
-	this.weapon.missile.reset();
-	this.weapon.missile.fire(player.x, player.y, player.direction, 600);
+	
+	//Increment fire index, and if we can fire another missile do so
+	this.weapon.missileIndex = (this.weapon.missileIndex + 1) % this.weapon.missileMax;
+	
+	// this.weapon.missiles[this.weapon.missileIndex].reset();
+	// this.weapon.missiles[this.weapon.missileIndex].fire(player.x, player.y, player.direction, 600);
+	
+	//If we cannot fire, player must wait till a previous missile expires
+	if(!this.weapon.missiles[this.weapon.missileIndex].alive)
+		this.weapon.missiles[this.weapon.missileIndex].fire(player.x, player.y, player.direction, 600);
+		
+	//TODO: Let player know they are firing too fast
 };
 
 Player.prototype.update = function(controls, map, seconds) {
@@ -144,27 +155,39 @@ Player.prototype.update = function(controls, map, seconds) {
 	//TODO: If {weapon switch} then change weapons
 	
 	//Update player's active missiles
-	if(player.weapon.missile.alive){
-		player.weapon.missile.update(map, seconds);
-	  player.framesSinceFire++;
+	for(var i = 0; i < this.weapon.missileMax; i++){
+		if(this.weapon.missiles[i].alive){
+			this.weapon.missiles[i].update(map, seconds);
+		}
 	}
+	
+	player.framesSinceFire++;
+
+	
 	
 };
 
 /** Weapon **/
-function Weapon(weaponBM, missile){
+function Weapon(weaponBM, missile, missileMax){
 	//weapon bitmap
 	this.weaponBM = weaponBM;
 	
 	//type of missile that the weapon fires
 	this.missile = missile;
 	
-	//TODO: add damage values, velocity
+	//number of allow missiles at a time
+	this.missileMax = missileMax;
+	
+	this.activeMissiles = 0;
+	this.missileIndex = 0;
+	
+	this.missiles = [];
+	
+	
+	for(var i = 0; i < missileMax; i++){
+		this.missiles.push( new Missile(missile.x, missile.y, missile.direction, missile.velocity, missile.missileBM) );
+	}
 }
-
-Weapon.prototype.switchMissile = function(missile){
-	this.missile = missile;
-};
 
 /** Missile **/
 function Missile(x, y, direction, velocity, missileBM){
@@ -207,15 +230,15 @@ Missile.prototype.travel = function(distance, map){
 		this.x += dx;
 		this.y += dy;
 		this.lifetime -= 1;
-		this.distance = map.distance(player, missile); //update distance from player
+		this.distance = map.distance(player, this); //update distance from player
 	}
 	else if(this.lifetime > 30){//we hit a wall!
 		this.lifetime = 30; //Lifetime reduced to standard explosion time
 		
-		this.distance = map.distance(player, missile); //update distance from player
+		this.distance = map.distance(player, this); //update distance from player
 
 		//Fake spawn explosion by swapping texture for last second of lifetime
-		missileBM = laser;
+		this.missileBM = laser;
 	}
 	else{
 		//Tick explosion lifetime
@@ -223,11 +246,11 @@ Missile.prototype.travel = function(distance, map){
 		
 		//'animate' explosion
 		if(this.lifetime % 2 === 0)
-			missileBM = laser;
+			this.missileBM = laser;
 		else
-		  missileBM = laser2;
+		  this.missileBM = laser2;
 			
-		this.distance = map.distance(player, missile); //update distance from player
+		this.distance = map.distance(player, this); //update distance from player
 
 	}
 	
@@ -241,7 +264,7 @@ Missile.prototype.reset = function(){
   this.distance = 0;
 	this.alive = false;
 	this.lifetime = 0;
-	missileBM = heart;
+	this.missileBM = heart;
 };
 
 /** Enemy **/
@@ -488,7 +511,10 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 		this.drawEnemy(player, enemies[i], map);
 	}
 		
-	this.drawMissile(player, map);
+	for(var i = 0; i < player.weapon.missileMax; i++){
+		this.drawMissile(player, map, i);
+	}
+	
 	this.drawWeapon(player.weapon, player.paces);
 	this.drawReticle(reticleBM);
 	
@@ -567,11 +593,12 @@ can have images for different angles.
 
 TODO: Draws whole picture now, but need to move this to drawColumn(). Draw column should ask if a grid contains a missile, and if so, find which quadrant in that grid the missile is.
 **/
-Camera.prototype.drawMissile = function(player, map){
+Camera.prototype.drawMissile = function(player, map, missileIndex){
 
  
 	var ctx = this.ctx;
-	var missile = player.weapon.missile;
+	var missile = player.weapon.missiles[missileIndex];
+	var missileBM = missile.missileBM;
 	
 	//If missile direction and player direction differ too much, don't draw
 	var angle = player.direction - missile.direction;
@@ -851,9 +878,11 @@ GameLoop.prototype.frame = function(time) {
 
 // Create each object
 var display = document.getElementById('display');
-var missile = new Missile(0, 0, Math.PI * 0.3, 6, missileBM);
-var weapon = new Weapon(weaponBM, missile);
+
+var _missile = new Missile(0, 0, Math.PI * 0.3, 5, missileBM);
+var weapon = new Weapon(weaponBM, _missile, 20);
 var player = new Player(15.3, -1.5, 0, weapon);
+
 var map = new Map(16, wallBM, skyBM, groundBM);
 var controls = new Controls();
 var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
