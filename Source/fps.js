@@ -15,6 +15,19 @@ bunnies "back in the box"?!
 Could be as simple as "kill" or "hit with bait" to teleport bunnies back into their "CAGE"!
 
 Boss spawn could use badman line from gone in 60 sec
+
+another good res http://www.spriters-resource.com
+http://www.8bitpeoples.com/discography/by/bit_shifter
+http://chipmusic.org/
+
+some ideas
+-first lvl find ak
+-next capture/kill all bunnies in box
+-find bee cannon for boss, or fight bees?
+kill boss cage and win!
+
+TODO: Consider a single image/spritesheet for game, and have
+all entities define an x, y, w, h, and dx to draw from the sheet.
 */
 
 var CIRCLE = Math.PI * 2;
@@ -23,8 +36,11 @@ var MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAge
 // Weapon textures
 var ripper = new Bitmap('../Assets/ripper.png', 320, 242);
 var heart = new Bitmap('../Assets/heart2.png', 229, 220);
+var box = new Bitmap('../Assets/box2.png', 347, 346);
 var laser = new Bitmap('../Assets/explosion.png', 256, 256);
 var laser2 = new Bitmap('../Assets/explosion2.png', 256, 256);
+
+var explosions = new Bitmap('../Assets/explosions.png', 532, 272);
 
 var reticle = new Bitmap('../Assets/reticle.png', 32, 32);
 
@@ -49,9 +65,10 @@ var skyBM = bwSeamless;
 var wallBM = bw;
 var groundBM = sand;
 var weaponBM = ripper;
-var missileBM = heart;
+var missileBM = box;
 var reticleBM = reticle;
 var enemyBM = bunny;
+var _boomBM = explosions;
 
 
 /** Control Object **/
@@ -138,7 +155,7 @@ Player.prototype.fire = function(seconds, map){
 	
 	//If we cannot fire, player must wait till a previous missile expires
 	if(!this.weapon.missiles[this.weapon.missileIndex].alive)
-		this.weapon.missiles[this.weapon.missileIndex].fire(player.x, player.y, player.direction, 600);
+		this.weapon.missiles[this.weapon.missileIndex].fire(player.x, player.y, player.direction, 50);
 		
 	//TODO: Let player know they are firing too fast
 };
@@ -185,12 +202,12 @@ function Weapon(weaponBM, missile, missileMax){
 	
 	
 	for(var i = 0; i < missileMax; i++){
-		this.missiles.push( new Missile(missile.x, missile.y, missile.direction, missile.velocity, missile.missileBM) );
+		this.missiles.push( new Missile(missile.x, missile.y, missile.direction, missile.velocity, missile.missileBM, missile.boomBM, missile.boomSize, missile.boomX, missile.boomY, missile.boomDX) );
 	}
 }
 
 /** Missile **/
-function Missile(x, y, direction, velocity, missileBM){
+function Missile(x, y, direction, velocity, missileBM, boomBM, boomSize, boomX, boomY, boomDX){
 	this.x = x;
 	this.y = y;
 	this.direction = direction;
@@ -200,6 +217,13 @@ function Missile(x, y, direction, velocity, missileBM){
 	
 	this.alive = false;
 	this.lifetime = 0;
+	
+	this.explode = false; 
+	this.boomBM = boomBM;//explosion texture
+	this.boomSize = boomSize;
+	this.boomX = boomX;//
+	this.boomY = boomY;//105;
+	this.boomDX = boomDX;
 	
 }
 
@@ -231,24 +255,29 @@ Missile.prototype.travel = function(distance, map){
 		this.y += dy;
 		this.lifetime -= 1;
 		this.distance = map.distance(player, this); //update distance from player
+		if(this.lifetime < 30){
+			this.missileBM = explosions;
+			this.explode = true;
+		}
 	}
-	else if(this.lifetime > 30){//we hit a wall!
+	else if(this.lifetime > 30){//we hit a wall or time expired
 		this.lifetime = 30; //Lifetime reduced to standard explosion time
 		
 		this.distance = map.distance(player, this); //update distance from player
 
 		//Fake spawn explosion by swapping texture for last second of lifetime
-		this.missileBM = laser;
+		this.missileBM = explosions;
+		this.explode = true;
 	}
 	else{
 		//Tick explosion lifetime
 		this.lifetime -= 1;
 		
-		//'animate' explosion
-		if(this.lifetime % 2 === 0)
-			this.missileBM = laser;
-		else
-		  this.missileBM = laser2;
+		// //'animate' explosion
+		// if(this.lifetime % 2 === 0)
+			// this.missileBM = laser;
+		// else
+		  // this.missileBM = laser2;
 			
 		this.distance = map.distance(player, this); //update distance from player
 
@@ -264,7 +293,10 @@ Missile.prototype.reset = function(){
   this.distance = 0;
 	this.alive = false;
 	this.lifetime = 0;
-	this.missileBM = heart;
+	this.missileBM = box;
+	this.explode = false;
+	this.boomX = 0;
+	this.boomY = 105;
 };
 
 /** Enemy **/
@@ -625,7 +657,18 @@ Camera.prototype.drawMissile = function(player, map, missileIndex){
 	var top = Math.floor(this.height * 0.6 - missileBM.height / (2 + missile.distance));//center on gun muzzle
 	
 	//debugger;
-	ctx.drawImage(missileBM.image, left, top, width, height);
+	if(!missile.explode)
+		ctx.drawImage(missileBM.image, left, top, width, height);
+	else{
+	  //TODO: give missiles a unique explosion anim rather than updating to same in update() func
+		
+		//Draw boom
+		ctx.drawImage(missileBM.image, missile.boomX, missile.boomY, missile.boomSize, missile.boomSize, left, top, width, height);
+		
+		//Increment through sprite sheet
+		missile.boomX = (missile.boomX + missile.boomDX) % missileBM.width;
+		
+	}
 };
 
 Camera.prototype.drawEnemy = function(player, enemy, map){
@@ -718,7 +761,7 @@ Camera.prototype.drawMinimap = function(player, enemies, map){
 
 	//Floor space of entire map grid
 	this.ctx.fillStyle = '#DDDDDD';
-	this.ctx.fillRect(0, 0, map.size * size + 2 * offset, map.size * size + 2 * offset);
+	//this.ctx.fillRect(0, 0, map.size * size + 2 * offset, map.size * size + 2 * offset);
 	
 	//Walls
 	for(var i = 0; i < map.size * map.size; i++){
@@ -879,7 +922,7 @@ GameLoop.prototype.frame = function(time) {
 // Create each object
 var display = document.getElementById('display');
 
-var _missile = new Missile(0, 0, Math.PI * 0.3, 5, missileBM);
+var _missile = new Missile(0, 0, Math.PI * 0.3, 8, missileBM, _boomBM, 56, 0, 105, 58.9);
 var weapon = new Weapon(weaponBM, _missile, 20);
 var player = new Player(15.3, -1.5, 0, weapon);
 
@@ -898,9 +941,16 @@ for(var i = 0; i < enemyCount; i++){
 map.randomize();
 map.spawn(enemies);
 
+var audioTheme = document.getElementById("theme");
 var audioAK = document.getElementById("ak");
 var audioBunny = document.getElementById("bunny");
 audioBunny.play();
+//audioTheme.play();
+
+var duration = 7;
+//console.debug(duration);
+var elapsed = 0;
+var played = false;
 
 // Start Game
 loop.start(function frame(seconds) {
@@ -912,4 +962,12 @@ loop.start(function frame(seconds) {
 	}
 	
 	camera.render(player, enemies, map, seconds);
+	
+	elapsed += seconds;
+	//console.debug(elapsed);
+	if(elapsed > duration && !played){
+		audioTheme.play();
+		played = true;
+	}
+	 
 });
