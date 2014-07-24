@@ -332,6 +332,7 @@ Enemy.prototype.walk = function(player, distance, map){
 
 	//Ask if player is nearby, and if so walk towards player
 	if(map.distance(player, this) < 5){
+		distance = 0;//debug
 		this.attack(player, distance, map);
 	}
 	// else{	//Else walk in random direction
@@ -434,7 +435,8 @@ Map.prototype.check = function(x, y, s, t){
 
 Map.prototype.randomize = function() {
 	for (var i = 0; i < this.size * this.size; i++) {
-	  this.wallGrid[i] = Math.random() < 0.3 ? 1 : 0;
+	  //this.wallGrid[i] = Math.random() < 0.3 ? 1 : 0;
+		this.wallGrid[i] = Math.random() < -1 ? 1 : 0;//debug
 	}
 };
 
@@ -674,7 +676,7 @@ Camera.prototype.drawMissile = function(player, map, missileIndex){
 Camera.prototype.drawEnemy = function(player, enemy, map){
 
 	if(!enemy.alive){
-		//console.debug("FAILED ALIVE CHECK");
+		console.debug("FAILED ALIVE CHECK");
 		return;
 	}
 	
@@ -683,11 +685,11 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var ctx = this.ctx;
 	
 	if(distance > limit){
-		//console.debug("FAILED DISTANCE < " + limit + " CHECK, distance: " + distance);
+		console.debug("FAILED DISTANCE < " + limit + " CHECK, distance: " + distance);
 		return;
 	}
 	
-	//If missile direction and player direction differ too much, don't draw
+	// If missile direction and player direction differ too much, don't draw
 	var diffX = player.x - enemy.x;
 	var diffY = player.y - enemy.y;
 	var angle = 0;
@@ -705,22 +707,17 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	//console.log("Player Angle: " + player.direction + ", Angle: " + angle + "Correction: " + bCorrection + ", Delta: " + dAngle + ", Distance: " + distance + ", Limit: " + limit);
 
 	if(Math.abs(dAngle) - Math.PI/36 > this.fov / 2){//5 deg = pi/36 allowance
-		//console.debug("FAILED FOV CHECK, dAngle: " + dAngle);
+		console.debug("FAILED FOV CHECK, dAngle: " + dAngle);
 		return;
 	}
 	
 	
+	// Cast ray from true angle, we know it is within fov
+	var ray = map.cast(player, angle, distance);
 	
-	var ray = map.cast(player, angle, distance);//cast ray from true angle, we know it is within fov
 	angle = dAngle;
 	var hit = -1;
 	while (++hit < ray.length && ray[hit].height <= 0);
-	
-	//If enemy behind wall, don't draw
-	if(hit < ray.length){
-		//console.debug("FAILED HIT CHECK, hit: " + hit);
-		return;
-	}
 		
 	var step = ray[ ray.length - 1 ];
 		
@@ -733,6 +730,64 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var column = this.resolution * (angle / this.fov + 0.5);
 	var left = Math.floor(this.width - column * this.spacing - enemyBM.width / (4 + distance));
 	var top = Math.floor(enemyBM.height / (2 + distance));
+	
+	// Cast two more rays, to each edge of enemy
+	var w2 = width / 2;
+	var hyp = Math.sqrt(distance * distance + this.spacing * this.spacing);//using width of scaled image produced too great of distances; rather we know enemy is no wider than spacing between walls
+	var theta = Math.asin(distance / hyp);
+		
+	var ray2 = map.cast(player, angle + theta, hyp);
+	var hit2 = -1;
+	while(++hit2 < ray2.length && ray2[hit2].height <= 0);
+	
+	var ray3 = map.cast(player, angle - theta, hyp);
+	var hit3 = -1;
+	while(++hit3 < ray3.length && ray3[hit3].height <= 0);
+	
+	// // If all 3 rays are blocked, do not draw
+	if(hit < ray.length && hit2 < ray2.length && hit3 < ray3.length){
+			console.debug("FAILED 3RAY CHECK");
+			return;
+	}
+		
+  // Otherwise we will sweep through width of enemy, and draw each of its columns
+	var delta = 2 * theta / 25;
+	var colW = enemyBM.width / 25;
+	var offset = 0;
+	
+	for(var col = 2*theta; col>0; col-=delta/2){
+		var beta = angle - theta + col;
+		var z = distance * Math.cos(beta);
+		var rayb = map.cast(player, beta, z);
+		var hitb = -1;
+		while(++hitb < rayb.length && rayb[hitb].height <= 0);
+		
+		if(hitb < rayb.length)
+			continue;//this column obstructed
+			
+		var c2 = this.resolution * (beta / this.fov + 0.5);
+		var c3 = Math.abs((beta / this.resolution - 0.5) * this.fov);
+		console.log("c3 " + c3);
+		//var tX = Math.floor(this.width * ray[ray.length - 1].offset);
+		var tX = Math.floor(enemyBM.width * offset / 25);
+		console.info("tX " + tX);
+		//strips too far apart
+		//var left = Math.floor(c2 * this.spacing);
+		var left = Math.floor(this.width - c2 * this.spacing - enemyBM.width / (4 + z));
+		var W = width/25;
+		var top = Math.floor(enemyBM.height / (2 + z));
+		
+		ctx.drawImage(enemyBM.image, tX, 0, colW, enemyBM.height, left, enemyP.top, W*this.spacing, enemyP.height);
+		
+		offset++;
+		
+		
+	}
+	
+	// if( distance < 5)
+			// debugger;
+			
+	console.log("distance " + distance);
 	
 	// console.log("Render Angle: " + angle 
 		// + ", Left: " + left 
@@ -932,7 +987,7 @@ var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
 var enemies = [];
-var enemyCount = 50;
+var enemyCount = 1;
 
 for(var i = 0; i < enemyCount; i++){
 	enemies.push(new Enemy(1.5, 100, 100, enemyBM));
@@ -944,7 +999,7 @@ map.spawn(enemies);
 var audioTheme = document.getElementById("theme");
 var audioAK = document.getElementById("ak");
 var audioBunny = document.getElementById("bunny");
-audioBunny.play();
+//audioBunny.play();
 //audioTheme.play();
 
 var duration = 7;
@@ -966,7 +1021,7 @@ loop.start(function frame(seconds) {
 	elapsed += seconds;
 	//console.debug(elapsed);
 	if(elapsed > duration && !played){
-		audioTheme.play();
+		//audioTheme.play();
 		played = true;
 	}
 	 
