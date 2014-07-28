@@ -714,31 +714,48 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	
 	// Cast ray from true angle, we know it is within fov
 	var ray = map.cast(player, angle, distance);
-	
-	angle = dAngle;
 	var hit = -1;
 	while (++hit < ray.length && ray[hit].height <= 0);
-		
 	var step = ray[ ray.length - 1 ];
-		
+	
+	/*
+	Save angle as dAngle = player.direction - angle,
+	as we draw from player.direction being 0 angle.
+	*/
+	var trueAngle = angle;
+	angle = dAngle;
+	
 	var enemyP = this.project(1, angle, distance);
 	var enemyX = Math.floor(enemyBM.width * step.offset);
 	var factor = Math.abs(1 + 2 * distance);
 	var width = Math.floor(enemyBM.width / factor);
 	var height = Math.floor(enemyBM.height / factor);
 	
+	// Column gives me the enumeration across the screen
 	var column = this.resolution * (angle / this.fov + 0.5);
+	
+	// Deduce left draw point from column and scaled width
 	var left = Math.floor(this.width - column * this.spacing - enemyBM.width / (4 + distance));
+	
 	var top = Math.floor(enemyBM.height / (2 + distance));
 	
 	// Cast two more rays, to each edge of enemy
-	var w2 = width / 2;
-	var hyp = Math.sqrt(distance * distance + this.spacing * this.spacing);//using width of scaled image produced too great of distances; rather we know enemy is no wider than spacing between walls
-	var theta = Math.asin(distance / hyp);
+	var w2 = this.spacing / (factor * 2);
+	var hyp = Math.sqrt(distance * distance + w2 * w2);//using width of scaled image produced too great of distances; rather we know enemy is no wider than spacing between walls
+	var theta = Math.asin(w2 / hyp);
+	// console.log(
+	// "True angle " + trueAngle + "\n"
+	// + "Angle " + angle + ", " + deg(angle) + "°\n"
+	// + "Theta " + theta + ", " + deg(theta) +  "°\n");
+	
+	var angleL = player.direction - (trueAngle - theta);
+	var angleR = player.direction - (trueAngle + theta);
 		
-	var ray2 = map.cast(player, angle + theta, hyp);//we know dis < hyp so we'll try dis instead of hyp for ray range for allowance
+	var ray2 = map.cast(player, trueAngle + theta, hyp);//we know dis < hyp so we'll try dis instead of hyp for ray range for allowance
 	var hit2 = -1;
 	while(++hit2 < ray2.length && ray2[hit2].height <= 0);
+	var ray2col = this.resolution * (angleL / this.fov + 0.5);
+	var ray2L = Math.floor(this.width - ray2col * this.spacing - enemyBM.width/(4+hyp));
 	
 	/* 
 	DEBUG TODO : always this ray that seems wrong 
@@ -747,18 +764,36 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	and obstruction does not occur when expected.
 	
 	Compounding this is the render being to the left or right? of actual enemy position
+	
+	EDIT: Aha we had saved angle=dAngle, forgetting true angle.
+	Ray render showed ray2 and ray3 were way too spread as suspected.
+	If we now use trueAngle, should be fixed.
+	
+	EDIT: Also, theta was ~90°! This also should not be true.
+	
 	*/
-	var ray3 = map.cast(player, angle - theta, hyp);
+	var ray3 = map.cast(player, trueAngle - theta, hyp);
 	var hit3 = -1;
 	while(++hit3 < ray3.length && ray3[hit3].height <= 0);
+	var ray3col = this.resolution * (angleR / this.fov + 0.5);
+	var ray3L = Math.floor(this.width - ray3col * this.spacing - enemyBM.width/(4+hyp));
 	
-	console.log("hit - length: " + (hit - ray.length) + "\n"
-	+ "hit2 - length2: " + (hit2 - ray2.length) + "\n" 
-	+ "hit3 - length3: " + (hit3 - ray3.length));
+	// console.log("hit - length: " + (hit - ray.length) + "\n"
+	// + "hit2 - length2: " + (hit2 - ray2.length) + "\n" 
+	// + "hit3 - length3: " + (hit3 - ray3.length));
+
+	var startX = this.width/2;
+	var startY = 0.8 * this.height;
+	var mid = enemyP.top + enemyP.height / 2;
+	this.drawLine(startX, startY, left, mid, "green");
+	this.drawLine(startX, startY, left-width/2, mid, "red");
+	this.drawLine(startX, startY, left+width/2, mid, "blue");
+	// this.drawLine(startX, startY, ray2L, mid, "white");
+	// this.drawLine(startX, startY, ray3L, mid, "black");
 
 	
 	// If 3 rays are blocked, do not draw
-	if(hit < ray.length && hit2 < ray2.length /* && hit3 < ray3.length */){
+	if(hit < ray.length && hit2 < ray2.length && hit3 < ray3.length){
 			console.debug("FAILED 3RAY CHECK");
 			return;
 	}
@@ -773,14 +808,17 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var W = 0;
 	var top = 0;
 	var beta = 0;
+	var trueBeta = 0;
 	var z = 0;
 	var rayb;
 	var hitb = -1;
 	
+	
 	for(var col = 2*theta; col>0; col-=delta/2){
 		beta = angle - theta + col;
+		trueBeta = trueAngle - theta + col;
 		z = distance * Math.cos(beta);
-		rayb = map.cast(player, beta, z);
+		rayb = map.cast(player, trueBeta, z);
 		hitb = -1;
 		while(++hitb < rayb.length && rayb[hitb].height <= 0);
 		
@@ -790,6 +828,8 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 			top = Math.floor(enemyBM.height / (2 + z));
 			ctx.drawImage(enemyBM.image, tX, 0, colW, enemyBM.height, L, enemyP.top, colW, enemyP.height);
 		}
+		
+		
 		
 		L+=colW;
 		offset++;
@@ -817,6 +857,18 @@ Camera.prototype.drawReticle = function(texture){
   var x = this.width/2 - texture.width/2;
 	var y = this.height/2 - texture.height/2;
 	this.ctx.drawImage(texture.image, x, y, texture.width, texture.height);
+};
+
+Camera.prototype.drawLine = function(x, y, x2, y2, color){
+	ctx = this.ctx;
+	ctx.save();
+	ctx.beginPath();
+	ctx.lineWidth="1";
+	ctx.strokeStyle=color;
+	ctx.moveTo(x, y);
+	ctx.lineTo(x2, y2);
+	ctx.stroke();
+	ctx.restore();
 };
 
 Camera.prototype.drawMinimap = function(player, enemies, map){
@@ -969,6 +1021,10 @@ Camera.prototype.project2 = function(height, width, angle, distance){
 	};
 };
 
+function deg(radians){
+	return radians * (180 / Math.PI);
+}
+
 /** GameLoop **/
 function GameLoop() {
 	this.frame = this.frame.bind(this);
@@ -1001,7 +1057,7 @@ var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
 var enemies = [];
-var enemyCount = 10;
+var enemyCount = 1;
 
 for(var i = 0; i < enemyCount; i++){
 	enemies.push(new Enemy(1.5, 100, 100, enemyBM));
