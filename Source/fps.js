@@ -331,24 +331,33 @@ Enemy.prototype.rotate = function(angle){
 Enemy.prototype.walk = function(player, distance, map){
 
 	//Ask if player is nearby, and if so walk towards player
-	if(map.distance(player, this) < 5){
+	if(map.distance(player, this) < -1){
 		this.attack(player, distance, map);
 	}
-	// else{	//Else walk in random direction
-		// var c = Math.floor(Math.random() * 4) / 4;
-		// this.direction = CIRCLE * c;
+	else{	//Else walk in random direction
+		//var c = Math.floor(Math.random() * 4) / 4;
+		//this.direction = CIRCLE * c;
+		//debug: test walking in a circle
+		this.rotate(Math.PI/32);
 		
-		// var dx = Math.cos(this.direction) * distance;
-		// var dy = Math.sin(this.direction) * distance;
+		var dx = Math.cos(this.direction) * distance;
+		var dy = Math.sin(this.direction) * distance;
 		
-		// //Skirt walls
-		// if (map.get(this.x + dx, this.y) <=0) 
-			// this.x += dx;
-		// if (map.get(this.x, this.y + dy) <=0)
-			// this.y += dy;
+		//Skirt walls
+		if (map.get(this.x + dx, this.y) <=0) 
+			this.x += dx;
+		if (map.get(this.x, this.y + dy) <=0)
+			this.y += dy;
+		
+		//If up against a wall, bounce away
+		var margin = 2;
+		if (map.get(this.x + margin + dx, this.y) > 0 || map.get(this.x - margin + dx, this.y) > 0) 
+			this.x -= dx;
+		if (map.get(this.x, this.y + margin + dy) > 0 || map.get(this.x, this.y - margin + dy) > 0)
+			this.y -= dy;
 			
-		// this.paces += distance;//Increase paces by distance travelled
-	// }
+		this.paces += distance;//Increase paces by distance travelled
+	}
 };
 
 Enemy.prototype.attack = function(player, distance, map){
@@ -673,7 +682,7 @@ Camera.prototype.drawMissile = function(player, map, missileIndex){
 
 Camera.prototype.drawEnemy = function(player, enemy, map){
 	
-	var strips = 50;//any higher and fps is bad
+	var strips = 10;
 
 	if(!enemy.alive){
 		//console.debug("FAILED ALIVE CHECK");
@@ -694,19 +703,20 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var diffY = player.y - enemy.y;
 	var angle = 0;
 	var bCorrection = false;
+	
 	//Note: atan2() udf at diffX = 0, diffY = 0.
 	if(diffX != 0, diffY != 0)
 		angle = Math.atan2(diffY, diffX) - Math.PI;
+	
+	//correct for negative angles
 	if(angle < 0){
-		angle = 2 * Math.PI + angle;//correct for negative angles
+		angle = 2 * Math.PI + angle;
 		bCorrection = true;
 	}
 	
 	var dAngle = player.direction - angle;
 	
-	//console.log("Player Angle: " + player.direction + ", Angle: " + angle + "Correction: " + bCorrection + ", Delta: " + dAngle + ", Distance: " + distance + ", Limit: " + limit);
-
-	if(Math.abs(dAngle) - Math.PI/36 > this.fov / 2){//5 deg = pi/36 allowance
+	if(Math.abs(dAngle) - Math.PI/36 > this.fov / 2){
 		//console.debug("FAILED FOV CHECK, dAngle: " + dAngle);
 		return;
 	}
@@ -740,7 +750,7 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var top = Math.floor(enemyBM.height / (2 + distance));
 	
 	// Cast two more rays, to each edge of enemy
-	var w2 = this.spacing / (factor * 2);
+	var w2 = 0.5 * this.spacing / (factor * 2);
 	var hyp = Math.sqrt(distance * distance + w2 * w2);//using width of scaled image produced too great of distances; rather we know enemy is no wider than spacing between walls
 	var theta = Math.asin(w2 / hyp);
 	// console.log(
@@ -783,13 +793,13 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	// + "hit3 - length3: " + (hit3 - ray3.length));
 
 	var startX = this.width/2;
-	var startY = 0.8 * this.height;
+	var startY = 1.2 * this.height;
 	var mid = enemyP.top + enemyP.height / 2;
-	this.drawLine(startX, startY, left, mid, "green");
-	this.drawLine(startX, startY, left-width/2, mid, "red");
-	this.drawLine(startX, startY, left+width/2, mid, "blue");
-	// this.drawLine(startX, startY, ray2L, mid, "white");
-	// this.drawLine(startX, startY, ray3L, mid, "black");
+	// this.drawLine(startX, startY, left, mid, "green");
+	// this.drawLine(startX, startY, left-width/2, mid, "red");
+	// this.drawLine(startX, startY, left+width/2, mid, "blue");
+	this.drawLine(startX, startY, ray2L, mid, "white");
+	this.drawLine(startX, startY, ray3L, mid, "black");
 
 	
 	// If 3 rays are blocked, do not draw
@@ -803,7 +813,7 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var colW = width / strips;
 	var offset = 0;
 	
-	var L = left;
+	var L = left - colW * strips / 2;
 	var tX = 0;
 	var W = 0;
 	var top = 0;
@@ -818,17 +828,26 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 		beta = angle - theta + col;
 		trueBeta = trueAngle - theta + col;
 		z = distance * Math.cos(beta);
-		rayb = map.cast(player, trueBeta, z);
+		rayb = map.cast(player, trueBeta, distance);
 		hitb = -1;
 		while(++hitb < rayb.length && rayb[hitb].height <= 0);
 		
-		if(hitb < rayb.length){
+		var angleB = player.direction - trueBeta;
+		var rayBcol = this.resolution * (angleB / this.fov + 0.5);
+		var rayBL = Math.floor(this.width - rayBcol * this.spacing - enemyBM.width/(4+z));
+		
+		
+		
+		if(hitb <= rayb.length){
 			tX = Math.floor(enemyBM.width * offset / strips);
 			W = width/strips;
 			top = Math.floor(enemyBM.height / (2 + z));
 			ctx.drawImage(enemyBM.image, tX, 0, colW, enemyBM.height, L, enemyP.top, colW, enemyP.height);
+			this.drawLine(startX, startY, rayBL, mid, "green");
 		}
-		
+		else{
+			this.drawLine(startX, startY, rayBL, mid, "red");
+		}
 		
 		
 		L+=colW;
@@ -1060,7 +1079,7 @@ var enemies = [];
 var enemyCount = 1;
 
 for(var i = 0; i < enemyCount; i++){
-	enemies.push(new Enemy(1.5, 100, 100, enemyBM));
+	enemies.push(new Enemy(0.2, 100, 100, enemyBM));
 }
 
 map.randomize();
