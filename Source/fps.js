@@ -394,9 +394,10 @@ Enemy.prototype.update = function(map, seconds, player){
 };
 
 /** Map **/
-function Map(size, wallBM, skyBM, groundBM){
-	this.size = size;
-	this.wallGrid = new Uint8Array(size*size);
+function Map(size, margin, wallBM, skyBM, groundBM){
+  this.margin = margin;
+	this.size = size + this.margin;
+	this.wallGrid = new Uint8Array(this.size*this.size);
 	this.skybox = skyBM; //new Bitmap('cagebox.jpg', 1920, 1080);
 	this.wallTexture = wallBM; //new Bitmap('nicolas-cage-expendables-3.jpg', 600, 397);
 	this.groundTexture = groundBM; // new Bitmap('nicolas-cage-expendables-3.jpg', 600, 397);
@@ -443,7 +444,16 @@ Map.prototype.check = function(x, y, s, t){
 
 Map.prototype.randomize = function() {
 	for (var i = 0; i < this.size * this.size; i++) {
-	  this.wallGrid[i] = Math.random() < 0.3 ? 1 : 0;
+	
+	  //Draw map boundary walls
+		if (i > this.size * (this.size - 1) || i % this.size == 0 || i % this.size == this.size - 1 || i / this.size < 1)
+			this.wallGrid[i] = 1;
+		//Leave margin so map is more traversable
+		else if(i < this.size * this.margin || i % this.size < this.margin || i > this.size * (this.size - this.margin) || i % this.size > this.size - this.margin - 1)
+			this.wallGrid[i] = 0;
+	  //Randomize the rest
+		else 
+			this.wallGrid[i] = this.wallGrid[i] = Math.random() < 0.3 ? 1 : 0;
 	}
 };
 
@@ -680,6 +690,12 @@ Camera.prototype.drawMissile = function(player, map, missileIndex){
 	}
 };
 
+/**
+  Draw enemy by dividing texture into columns.
+	
+	Divides image into columns, and casts rays for each to determine occlusion by
+	environment.
+**/
 Camera.prototype.drawEnemy = function(player, enemy, map){
 	
 	var strips = 10;
@@ -702,7 +718,6 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var diffX = player.x - enemy.x;
 	var diffY = player.y - enemy.y;
 	var angle = 0;
-	var bCorrection = false;
 	
 	//Note: atan2() udf at diffX = 0, diffY = 0.
 	if(diffX != 0, diffY != 0)
@@ -711,7 +726,6 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	//correct for negative angles
 	if(angle < 0){
 		angle = 2 * Math.PI + angle;
-		bCorrection = true;
 	}
 	
 	var dAngle = player.direction - angle;
@@ -738,20 +752,15 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var enemyP = this.project(1, angle, distance);
 	var enemyX = Math.floor(enemyBM.width * step.offset);
 	var factor = Math.abs(1 + 2 * distance);
-	var width = Math.floor(enemyBM.width / factor);
+	var width = Math.ceil(this.spacing);//Math.floor(enemyBM.width / factor);
 	var height = Math.floor(enemyBM.height / factor);
-	
-	// Column gives me the enumeration across the screen
 	var column = this.resolution * (angle / this.fov + 0.5);
-	
-	// Deduce left draw point from column and scaled width
-	var left = Math.floor(this.width - column * this.spacing - enemyBM.width / (4 + distance));
-	
-	var top = Math.floor(enemyBM.height / (2 + distance));
+	var left = Math.floor(column * this.spacing);//Math.floor(this.width - column * this.spacing - enemyBM.width / (4 + distance));
+	//var top = Math.floor(enemyBM.height / (2 + distance));
 	
 	// Cast two more rays, to each edge of enemy
-	var w2 = 0.5 * this.spacing / (factor * 2);
-	var hyp = Math.sqrt(distance * distance + w2 * w2);//using width of scaled image produced too great of distances; rather we know enemy is no wider than spacing between walls
+	var w2 = this.spacing;//0.5 * this.spacing / (factor * 2);
+	var hyp = Math.sqrt(distance * distance + w2 * w2);
 	var theta = Math.asin(w2 / hyp);
 	// console.log(
 	// "True angle " + trueAngle + "\n"
@@ -761,45 +770,26 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var angleL = player.direction - (trueAngle - theta);
 	var angleR = player.direction - (trueAngle + theta);
 		
-	var ray2 = map.cast(player, trueAngle + theta, hyp);//we know dis < hyp so we'll try dis instead of hyp for ray range for allowance
+	var ray2 = map.cast(player, trueAngle + theta, hyp);
 	var hit2 = -1;
 	while(++hit2 < ray2.length && ray2[hit2].height <= 0);
 	var ray2col = this.resolution * (angleL / this.fov + 0.5);
-	var ray2L = Math.floor(this.width - ray2col * this.spacing - enemyBM.width/(4+hyp));
+	var ray2L = Math.floor(ray2col * this.spacing);//Math.floor(this.width - ray2col * this.spacing - enemyBM.width/(4+hyp));
 	
-	/* 
-	DEBUG TODO : always this ray that seems wrong 
-	
-	Nope its both ray2, ray3, and rayb's somehow the theta angle for the trace is wrong, 
-	and obstruction does not occur when expected.
-	
-	Compounding this is the render being to the left or right? of actual enemy position
-	
-	EDIT: Aha we had saved angle=dAngle, forgetting true angle.
-	Ray render showed ray2 and ray3 were way too spread as suspected.
-	If we now use trueAngle, should be fixed.
-	
-	EDIT: Also, theta was ~90°! This also should not be true.
-	
-	*/
 	var ray3 = map.cast(player, trueAngle - theta, hyp);
 	var hit3 = -1;
 	while(++hit3 < ray3.length && ray3[hit3].height <= 0);
 	var ray3col = this.resolution * (angleR / this.fov + 0.5);
-	var ray3L = Math.floor(this.width - ray3col * this.spacing - enemyBM.width/(4+hyp));
-	
-	// console.log("hit - length: " + (hit - ray.length) + "\n"
-	// + "hit2 - length2: " + (hit2 - ray2.length) + "\n" 
-	// + "hit3 - length3: " + (hit3 - ray3.length));
+	var ray3L = Math.floor(ray3col * this.spacing);//Math.floor(this.width - ray3col * this.spacing - enemyBM.width/(4+hyp));
 
-	var startX = this.width/2;
-	var startY = 1.2 * this.height;
-	var mid = enemyP.top + enemyP.height / 2;
+	var startX = this.width / 2;
+	var startY = 1.5 * this.height;
+	var mid = this.height / 2;
 	// this.drawLine(startX, startY, left, mid, "green");
 	// this.drawLine(startX, startY, left-width/2, mid, "red");
 	// this.drawLine(startX, startY, left+width/2, mid, "blue");
-	this.drawLine(startX, startY, ray2L, mid, "white");
-	this.drawLine(startX, startY, ray3L, mid, "black");
+	//this.drawLine(startX, startY, ray2L, mid, "white");
+	//this.drawLine(startX, startY, ray3L, mid, "black");
 
 	
 	// If 3 rays are blocked, do not draw
@@ -815,16 +805,15 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	
 	var L = left - colW * strips / 2;
 	var tX = 0;
-	var W = 0;
-	var top = 0;
+	var W = enemyBM.width/strips;
 	var beta = 0;
 	var trueBeta = 0;
 	var z = 0;
 	var rayb;
 	var hitb = -1;
+	var color = 0;
 	
-	
-	for(var col = 2*theta; col>0; col-=delta/2){
+	for(var col = 0; col < 2 * theta; col += delta){
 		beta = angle - theta + col;
 		trueBeta = trueAngle - theta + col;
 		z = distance * Math.cos(beta);
@@ -834,41 +823,32 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 		
 		var angleB = player.direction - trueBeta;
 		var rayBcol = this.resolution * (angleB / this.fov + 0.5);
-		var rayBL = Math.floor(this.width - rayBcol * this.spacing - enemyBM.width/(4+z));
+		var rayBL = Math.floor(this.width - rayBcol * this.spacing);//Math.floor(this.width - rayBcol * this.spacing - enemyBM.width/(4+z));
 		
 		
 		
-		if(hitb <= rayb.length){
+		if(hitb < rayb.length){
 			tX = Math.floor(enemyBM.width * offset / strips);
-			W = width/strips;
-			top = Math.floor(enemyBM.height / (2 + z));
-			ctx.drawImage(enemyBM.image, tX, 0, colW, enemyBM.height, L, enemyP.top, colW, enemyP.height);
+			ctx.drawImage(enemyBM.image, tX, 0, colW, enemyBM.height, this.width - rayBL, enemyP.top, W, enemyBM.height);
 			this.drawLine(startX, startY, rayBL, mid, "green");
 		}
 		else{
 			this.drawLine(startX, startY, rayBL, mid, "red");
 		}
 		
+		// if(color <= 999999)
+			// this.drawLine(startX, startY, rayBL, mid, "#" + color.toString());
 		
 		L+=colW;
 		offset++;
+		if(color < 888888);
+			color+=111111;
+		
 		
 		
 		
 	}
 	
-	// if( distance < 5)
-			// debugger;
-			
-	//console.log("distance " + distance);
-	
-	// console.log("Render Angle: " + angle 
-		// + ", Left: " + left 
-		// + ", Top: " + top
-		// + ", \nenemyX: " + enemyX
-		// + ", enemyP.top: " + enemyP.top
-		// + ", enemyP.height: " + enemyP.height);
-	//debugger;
 	//ctx.drawImage(enemyBM.image, left, enemyP.top, width, enemyP.height);
 };
 
@@ -906,8 +886,12 @@ Camera.prototype.drawMinimap = function(player, enemies, map){
 	//Walls
 	for(var i = 0; i < map.size * map.size; i++){
 		var point = map.getPoint(i);
-		if(map.wallGrid[i] > 0){
+		if(map.wallGrid[i] == 1){
 			this.ctx.fillStyle = '#000000';
+			this.ctx.fillRect(point.x * size + offset, point.y * size + offset, size, size);
+		}
+		if(map.wallGrid[i] == 2){//debug map generation
+			this.ctx.fillStyle = '#FF0000';
 			this.ctx.fillRect(point.x * size + offset, point.y * size + offset, size, size);
 		}
 		
@@ -1068,9 +1052,13 @@ var display = document.getElementById('display');
 
 var _missile = new Missile(0, 0, Math.PI * 0.3, 8, missileBM, _boomBM, 56, 0, 105, 58.9);
 var weapon = new Weapon(weaponBM, _missile, 20);
-var player = new Player(15.3, -1.5, 0, weapon);
 
-var map = new Map(16, wallBM, skyBM, groundBM);
+
+var map = new Map(16, 3, wallBM, skyBM, groundBM);
+map.randomize();
+var p = map.getPoint(19+2);
+var player = new Player(p.x, p.y, 0, weapon);
+
 var controls = new Controls();
 var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
@@ -1082,7 +1070,6 @@ for(var i = 0; i < enemyCount; i++){
 	enemies.push(new Enemy(0.2, 100, 100, enemyBM));
 }
 
-map.randomize();
 map.spawn(enemies);
 
 var audioTheme = document.getElementById("theme");
