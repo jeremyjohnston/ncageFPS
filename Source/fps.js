@@ -251,8 +251,10 @@ Missile.prototype.travel = function(distance, map){
 	
 	//If no wall in path, travel forward. This can be modified to have bouncing projectiles!
 	if( this.alive && map.get(this.x + dx, this.y) <= 0 && map.get(this.x, this.y + dy) <= 0){
-		this.x += dx;
-		this.y += dy;
+		if(!this.explode){
+			this.x += dx;
+			this.y += dy;
+		}
 		this.lifetime -= 1;
 		this.distance = map.distance(player, this); //update distance from player
 		if(this.lifetime < 30){
@@ -453,7 +455,7 @@ Map.prototype.randomize = function() {
 			this.wallGrid[i] = 0;
 	  //Randomize the rest
 		else 
-			this.wallGrid[i] = this.wallGrid[i] = Math.random() < 0.3 ? 1 : 0;
+			this.wallGrid[i] = this.wallGrid[i] = Math.random() < 0.3 ? 2 : 0;
 	}
 };
 
@@ -557,10 +559,7 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 	this.drawSky(player.direction, map.skybox, map.light);
 	this.drawTerrain(player.direction, groundBM, map.light);
 	this.drawColumns(player, map);
-	
-	for(var i = 0; i < enemies.length; i++){
-		this.drawEnemy(player, enemies[i], map);
-	}
+	this.drawEnemies(player, enemies, map);
 		
 	for(var i = 0; i < player.weapon.missileMax; i++){
 		this.drawMissile(player, map, i);
@@ -572,6 +571,23 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 	this.drawMinimap(player, enemies, map);
 	
 };
+
+Camera.prototype.drawEnemies = function(player, enemies, map){
+	var sprites = [];
+	var s;
+	
+	for(var i = 0; i < enemies.length; i++){
+		s = this.drawEnemy(player, enemies[i], map);
+		if(s.bDraw)
+			sprites.push(s.sprite);
+	}
+	
+	console.log("Rendered Enemies: " + sprites.length);
+	
+	for(var column = 0; column < this.resolution; column++){
+		this.drawEnemyColumn(player, column, sprites, map);
+	}
+}
 
 Camera.prototype.drawSky = function(direction, sky, ambient) {
 	var width = this.width * (CIRCLE / this.fov);
@@ -690,6 +706,32 @@ Camera.prototype.drawMissile = function(player, map, missileIndex){
 	}
 };
 
+Camera.prototype.drawEnemyColumn = function(player, column, sprites, map){
+	
+	var ctx = this.ctx;
+	var left = Math.floor(column * this.spacing);
+	var width = Math.ceil(this.spacing);
+	var angle = this.fov * (column / this.resolution - 0.5);
+	var colW = this.width / this.resolution;
+	
+	for(var i = 0; i < sprites.length; i++){
+	  sprite = sprites[i];
+		var bDrawSprite = left > sprite.xoffset - (sprite.width / 2) && left < sprite.xoffset + (sprite.width / 2);
+		
+		if(bDrawSprite){
+			var textureX = Math.floor(sprite.width / sprite.numColumns * (column - sprite.c1));
+			
+			ctx.drawImage(enemyBM.image, textureX, 0, 1, enemyBM.height, left, sprite.top, width, sprite.height);
+			
+			
+		}
+		
+		if(sprite.distance < 2)
+				debugger;
+	}
+		
+}
+
 /**
   Draw enemy by dividing texture into columns.
 	
@@ -698,20 +740,20 @@ Camera.prototype.drawMissile = function(player, map, missileIndex){
 **/
 Camera.prototype.drawEnemy = function(player, enemy, map){
 	
-	var strips = 10;
-
+	var render = { bDraw: false, sprite: 0};
+	
 	if(!enemy.alive){
 		//console.debug("FAILED ALIVE CHECK");
-		return;
+		return render;
 	}
 	
-	var distance = enemy.distance;
-	var limit = this.range * this.spacing;	
+	var distance = Math.abs(enemy.distance);
+	var limit = this.range * 2;	
 	var ctx = this.ctx;
 	
 	if(distance > limit){
 		//console.debug("FAILED DISTANCE < " + limit + " CHECK, distance: " + distance);
-		return;
+		return render;
 	}
 	
 	// If missile direction and player direction differ too much, don't draw
@@ -729,125 +771,127 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	}
 	
 	var dAngle = player.direction - angle;
+	if(dAngle >= Math.PI)
+		dAngle -= CIRCLE;
 	
 	if(Math.abs(dAngle) - Math.PI/36 > this.fov / 2){
 		//console.debug("FAILED FOV CHECK, dAngle: " + dAngle);
-		return;
+		return render;
 	}
 	
+	var scaleFactor = 1 + distance;
+	var width = enemyBM.width * this.width / scaleFactor;
+	var hyp = Math.sqrt(distance * distance + width * width);
+	var theta = Math.asin(width / hyp);
 	
-	// Cast ray from true angle, we know it is within fov
 	var ray = map.cast(player, angle, distance);
-	var hit = -1;
-	while (++hit < ray.length && ray[hit].height <= 0);
-	var step = ray[ ray.length - 1 ];
+	var hit = getHit(ray);
+	var end = ray[ray.length - 1];
+	var ray2 = map.cast(player, angle - theta, distance);
+	var hit2 = getHit(ray2);
+	var end2 = ray2[ray2.length - 1];
+	var ray3 = map.cast(player, angle + theta, distance);
+	var hit3 = getHit(ray3);
+	var end3 = ray3[ray3.length - 1];
 	
-	/*
-	Save angle as dAngle = player.direction - angle,
-	as we draw from player.direction being 0 angle.
-	*/
-	var trueAngle = angle;
-	angle = dAngle;
+	// If 3 rays are blocked, do not draw
+	if(hit < ray.length && hit2 < ray2.length && hit3 < ray3.length){
+			console.debug("FAILED 3RAY CHECK");
+			return render;
+	}
 	
-	var enemyP = this.project(1, angle, distance);
-	var enemyX = Math.floor(enemyBM.width * step.offset);
-	var factor = Math.abs(1 + 2 * distance);
-	var width = Math.ceil(this.spacing);//Math.floor(enemyBM.width / factor);
-	var height = Math.floor(enemyBM.height / factor);
-	var column = this.resolution * (angle / this.fov + 0.5);
-	var left = Math.floor(column * this.spacing);//Math.floor(this.width - column * this.spacing - enemyBM.width / (4 + distance));
-	//var top = Math.floor(enemyBM.height / (2 + distance));
+	var height = enemyBM.height * this.height / scaleFactor;
+	var top = (this.height / 2) * ( 2 / scaleFactor) - height;
+	var ratio = this.width / this.fov;
+	var xoffset = (this.width / 2) - (ratio * dAngle);
+	var numColumns = width / this.width * this.resolution;
+	var c1 = Math.floor( (xoffset - width / 2) / this.width * this.resolution);
 	
-	// Cast two more rays, to each edge of enemy
-	var w2 = this.spacing;//0.5 * this.spacing / (factor * 2);
-	var hyp = Math.sqrt(distance * distance + w2 * w2);
-	var theta = Math.asin(w2 / hyp);
+	var sprite = {
+		width: width,
+		height: height,
+		top: top,
+		dAngle: dAngle,
+		xoffset: xoffset,
+		distance: distance,
+		numColumns: numColumns,
+		c1: c1,
+		distance: distance
+	}
+	
+	render.bDraw = true;
+	render.sprite = sprite;
+	
+	ctx.fillStyle = 'red';
+	ctx.fillRect(xoffset, this.height / 2, 3, 3);
+	
+	return render;
+	
+	
+	
 	// console.log(
-	// "True angle " + trueAngle + "\n"
-	// + "Angle " + angle + ", " + deg(angle) + "°\n"
+	// "Angle " + angle + "\n"
+	// + "dAngle " + dAngle + ", " + deg(dAngle) + "°\n"
 	// + "Theta " + theta + ", " + deg(theta) +  "°\n");
 	
-	var angleL = player.direction - (trueAngle - theta);
-	var angleR = player.direction - (trueAngle + theta);
-		
-	var ray2 = map.cast(player, trueAngle + theta, hyp);
-	var hit2 = -1;
-	while(++hit2 < ray2.length && ray2[hit2].height <= 0);
-	var ray2col = this.resolution * (angleL / this.fov + 0.5);
-	var ray2L = Math.floor(ray2col * this.spacing);//Math.floor(this.width - ray2col * this.spacing - enemyBM.width/(4+hyp));
-	
-	var ray3 = map.cast(player, trueAngle - theta, hyp);
-	var hit3 = -1;
-	while(++hit3 < ray3.length && ray3[hit3].height <= 0);
-	var ray3col = this.resolution * (angleR / this.fov + 0.5);
-	var ray3L = Math.floor(ray3col * this.spacing);//Math.floor(this.width - ray3col * this.spacing - enemyBM.width/(4+hyp));
-
-	var startX = this.width / 2;
-	var startY = 1.5 * this.height;
-	var mid = this.height / 2;
+	// var startX = this.width / 2;
+	// var startY = 1.5 * this.height;
+	// var mid = this.height / 2;
 	// this.drawLine(startX, startY, left, mid, "green");
 	// this.drawLine(startX, startY, left-width/2, mid, "red");
 	// this.drawLine(startX, startY, left+width/2, mid, "blue");
 	//this.drawLine(startX, startY, ray2L, mid, "white");
 	//this.drawLine(startX, startY, ray3L, mid, "black");
 
+	// var delta = 2 * theta / strips;
+	// var colW = width / strips;
+	// var offset = 0;
 	
-	// If 3 rays are blocked, do not draw
-	if(hit < ray.length && hit2 < ray2.length && hit3 < ray3.length){
-			console.debug("FAILED 3RAY CHECK");
-			return;
-	}
+	// var L = left - colW * strips / 2;
+	// var tX = 0;
+	// var W = enemyBM.width/strips;
+	// var beta = 0;
+	// var trueBeta = 0;
+	// var z = 0;
+	// var rayb;
+	// var hitb = -1;
+	// var color = 0;
 	
-  // Otherwise we will sweep through width of enemy, and draw each of its columns
-	var delta = 2 * theta / strips;
-	var colW = width / strips;
-	var offset = 0;
-	
-	var L = left - colW * strips / 2;
-	var tX = 0;
-	var W = enemyBM.width/strips;
-	var beta = 0;
-	var trueBeta = 0;
-	var z = 0;
-	var rayb;
-	var hitb = -1;
-	var color = 0;
-	
-	for(var col = 0; col < 2 * theta; col += delta){
-		beta = angle - theta + col;
-		trueBeta = trueAngle - theta + col;
-		z = distance * Math.cos(beta);
-		rayb = map.cast(player, trueBeta, distance);
-		hitb = -1;
-		while(++hitb < rayb.length && rayb[hitb].height <= 0);
+	// for(var col = 0; col < 2 * theta; col += delta){
+		// beta = angle - theta + col;
+		// trueBeta = trueAngle - theta + col;
+		// z = distance * Math.cos(beta);
+		// rayb = map.cast(player, trueBeta, distance);
+		// hitb = -1;
+		// while(++hitb < rayb.length && rayb[hitb].height <= 0);
 		
-		var angleB = player.direction - trueBeta;
-		var rayBcol = this.resolution * (angleB / this.fov + 0.5);
-		var rayBL = Math.floor(this.width - rayBcol * this.spacing);//Math.floor(this.width - rayBcol * this.spacing - enemyBM.width/(4+z));
+		// var angleB = player.direction - trueBeta;
+		// var rayBcol = this.resolution * (angleB / this.fov + 0.5);
+		// var rayBL = Math.floor(this.width - rayBcol * this.spacing);//Math.floor(this.width - rayBcol * this.spacing - enemyBM.width/(4+z));
 		
 		
 		
-		if(hitb < rayb.length){
-			tX = Math.floor(enemyBM.width * offset / strips);
-			ctx.drawImage(enemyBM.image, tX, 0, colW, enemyBM.height, this.width - rayBL, enemyP.top, W, enemyBM.height);
-			this.drawLine(startX, startY, rayBL, mid, "green");
-		}
-		else{
-			this.drawLine(startX, startY, rayBL, mid, "red");
-		}
+		// if(hitb < rayb.length){
+			// tX = Math.floor(enemyBM.width * offset / strips);
+			// ctx.drawImage(enemyBM.image, tX, 0, colW, enemyBM.height, this.width - rayBL, enemyP.top, W, enemyBM.height);
+			// this.drawLine(startX, startY, rayBL, mid, "green");
+		// }
+		// else{
+			// this.drawLine(startX, startY, rayBL, mid, "red");
+		// }
 		
-		// if(color <= 999999)
-			// this.drawLine(startX, startY, rayBL, mid, "#" + color.toString());
+		// // if(color <= 999999)
+			// // this.drawLine(startX, startY, rayBL, mid, "#" + color.toString());
 		
-		L+=colW;
-		offset++;
-		if(color < 888888);
-			color+=111111;
+		// L+=colW;
+		// offset++;
+		// if(color < 888888);
+			// color+=111111;
 		
 		
 		
 		
-	}
+	// }
 	
 	//ctx.drawImage(enemyBM.image, left, enemyP.top, width, enemyP.height);
 };
@@ -891,7 +935,7 @@ Camera.prototype.drawMinimap = function(player, enemies, map){
 			this.ctx.fillRect(point.x * size + offset, point.y * size + offset, size, size);
 		}
 		if(map.wallGrid[i] == 2){//debug map generation
-			this.ctx.fillStyle = '#FF0000';
+			this.ctx.fillStyle = '#333333';
 			this.ctx.fillRect(point.x * size + offset, point.y * size + offset, size, size);
 		}
 		
@@ -1026,6 +1070,12 @@ Camera.prototype.project2 = function(height, width, angle, distance){
 
 function deg(radians){
 	return radians * (180 / Math.PI);
+}
+
+function getHit(ray){
+	var hit = -1;
+	while (++hit < ray.length && ray[hit].height <= 0);
+	return hit;
 }
 
 /** GameLoop **/
