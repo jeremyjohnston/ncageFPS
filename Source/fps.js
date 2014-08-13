@@ -73,7 +73,18 @@ var _boomBM = explosions;
 
 /** Control Object **/
 function Controls() {
-	this.codes  = { 37: 'left', 39: 'right', 38: 'forward', 40: 'backward', 96: 'fire' };//arrow keys to move, numpad 0 to fire
+	this.codes  = { 
+	37: 'left',  	//arrow keys to move
+	39: 'right', 
+	38: 'forward', 
+	40: 'backward', 
+	96: 'fire', 	//numpad 0 to fire
+	32: 'fire',		//spacebar to fire
+	65: 'left',		//WASD to move
+	68: 'right',
+	87: 'forward',
+	83: 'backward'
+	};
 	this.states = { 'left': false, 'right': false, 'forward': false, 'backward': false, 'fire': false };
 	document.addEventListener('keydown', this.onKey.bind(this, true), false);
 	document.addEventListener('keyup', this.onKey.bind(this, false), false);
@@ -447,7 +458,7 @@ Map.prototype.check = function(x, y, s, t){
 Map.prototype.randomize = function() {
 	for (var i = 0; i < this.size * this.size; i++) {
 	
-	  //Draw map boundary walls
+	  //Draw map boundary walls 
 		if (i > this.size * (this.size - 1) || i % this.size == 0 || i % this.size == this.size - 1 || i / this.size < 1)
 			this.wallGrid[i] = 1;
 		//Leave margin so map is more traversable
@@ -455,7 +466,7 @@ Map.prototype.randomize = function() {
 			this.wallGrid[i] = 0;
 	  //Randomize the rest
 		else 
-			this.wallGrid[i] = this.wallGrid[i] = Math.random() < 0.3 ? 2 : 0;
+			this.wallGrid[i] = this.wallGrid[i] = Math.random() < 0.3 ? 1 : 0;
 	}
 };
 
@@ -708,20 +719,31 @@ Camera.prototype.drawMissile = function(player, map, missileIndex){
 
 Camera.prototype.drawEnemyColumn = function(player, column, sprites, map){
 	
-	var ctx = this.ctx;
+	var ctx = this.ctx; 
 	var left = Math.floor(column * this.spacing);
 	var width = Math.ceil(this.spacing);
 	var angle = this.fov * (column / this.resolution - 0.5);
 	var colW = this.width / this.resolution;
+	var textureX;
+	var sprite;
+	var height;
+	var top;
+	var bDrawSprite;
 	
 	for(var i = 0; i < sprites.length; i++){
 	  sprite = sprites[i];
-		var bDrawSprite = left > sprite.xoffset - (sprite.width / 2) && left < sprite.xoffset + (sprite.width / 2);
+		
+		
+		bDrawSprite = 
+			left > sprite.xoffset - (sprite.width / 2) &&
+			left < sprite.xoffset + (sprite.width / 2);
 		
 		if(bDrawSprite){
-			var textureX = Math.floor(sprite.width / sprite.numColumns * (column - sprite.c1));
+			height = sprite.height;
+			top = sprite.top;
+			textureX = Math.floor( enemyBM.width / sprite.numColumns * (column - sprite.c1) );
 			
-			ctx.drawImage(enemyBM.image, textureX, 0, 1, enemyBM.height, left, sprite.top, width, sprite.height);
+			ctx.drawImage(enemyBM.image, textureX, 0, 1, enemyBM.height, left, top, width, height);
 			
 			
 		}
@@ -747,7 +769,7 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 		return render;
 	}
 	
-	var distance = Math.abs(enemy.distance);
+	var distance = Math.abs(map.distance(player, enemy));
 	var limit = this.range * 2;	
 	var ctx = this.ctx;
 	
@@ -779,39 +801,39 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 		return render;
 	}
 	
-	var scaleFactor = 1 + distance;
-	var width = enemyBM.width * this.width / scaleFactor;
-	var hyp = Math.sqrt(distance * distance + width * width);
-	var theta = Math.asin(width / hyp);
+	var scaleFactor = 0.01 + Math.abs(distance);
+	var width = .5 * this.width / scaleFactor; //Multiples of a fraction of wall spacing
+	// var hyp = Math.sqrt(distance * distance + width * width);
+	// var theta = Math.asin(width / hyp);
 	
-	var ray = map.cast(player, angle, distance);
-	var hit = getHit(ray);
-	var end = ray[ray.length - 1];
-	var ray2 = map.cast(player, angle - theta, distance);
-	var hit2 = getHit(ray2);
-	var end2 = ray2[ray2.length - 1];
-	var ray3 = map.cast(player, angle + theta, distance);
-	var hit3 = getHit(ray3);
-	var end3 = ray3[ray3.length - 1];
+	// var ray = map.cast(player, angle, distance);
+	// var hit = getHit(ray);
+	// var end = ray[ray.length - 1];
+	// var ray2 = map.cast(player, angle - theta, distance);
+	// var hit2 = getHit(ray2);
+	// var end2 = ray2[ray2.length - 1];
+	// var ray3 = map.cast(player, angle + theta, distance);
+	// var hit3 = getHit(ray3);
+	// var end3 = ray3[ray3.length - 1];
 	
-	// If 3 rays are blocked, do not draw
-	if(hit < ray.length && hit2 < ray2.length && hit3 < ray3.length){
-			console.debug("FAILED 3RAY CHECK");
-			return render;
-	}
+	// // If 3 rays are blocked, do not draw
+	// if(hit < ray.length && hit2 < ray2.length && hit3 < ray3.length){
+			// console.debug("FAILED 3RAY CHECK");
+			// return render;
+	// }
 	
-	var height = enemyBM.height * this.height / scaleFactor;
-	var top = (this.height / 2) * ( 2 / scaleFactor) - height;
+	var height = .7 * this.height / scaleFactor; //Scaled multiples of wall spacing fraction
+	var top = (this.height / 2) * ( 1 + 1 / scaleFactor) - height;
 	var ratio = this.width / this.fov;
 	var xoffset = (this.width / 2) - (ratio * dAngle);
-	var numColumns = width / this.width * this.resolution;
+	var numColumns = (width / this.width) * this.resolution;
 	var c1 = Math.floor( (xoffset - width / 2) / this.width * this.resolution);
 	
 	var sprite = {
 		width: width,
 		height: height,
 		top: top,
-		dAngle: dAngle,
+		angle: dAngle,
 		xoffset: xoffset,
 		distance: distance,
 		numColumns: numColumns,
