@@ -567,10 +567,14 @@ function Camera(canvas, resolution, fov) {
 }
 
 Camera.prototype.render = function(player, enemies, map, seconds) {
+	
+	//hold a set of distances to closest object in each rendered column
+	var columns = [];
+
 	this.drawSky(player.direction, map.skybox, map.light);
 	this.drawTerrain(player.direction, groundBM, map.light);
-	this.drawColumns(player, map);
-	this.drawEnemies(player, enemies, map);
+	this.drawColumns(player, map, columns);
+	this.drawEnemies(player, enemies, map, columns);
 		
 	for(var i = 0; i < player.weapon.missileMax; i++){
 		this.drawMissile(player, map, i);
@@ -583,7 +587,7 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 	
 };
 
-Camera.prototype.drawEnemies = function(player, enemies, map){
+Camera.prototype.drawEnemies = function(player, enemies, map, columns){
 	var sprites = [];
 	var s;
 	
@@ -595,8 +599,13 @@ Camera.prototype.drawEnemies = function(player, enemies, map){
 	
 	console.log("Rendered Enemies: " + sprites.length);
 	
+	sprites.sort(function(a,b){return b.distance - a.distance});
+	
+	var newDist;
 	for(var column = 0; column < this.resolution; column++){
-		this.drawEnemyColumn(player, column, sprites, map);
+		newDist = this.drawEnemyColumn(player, column, sprites, map, columns[column]);
+		
+		columns[column] = newDist;
 	}
 }
 
@@ -617,13 +626,13 @@ Camera.prototype.drawSky = function(direction, sky, ambient) {
 	this.ctx.restore();
 };
 
-Camera.prototype.drawColumns = function(player, map) {
+Camera.prototype.drawColumns = function(player, map, columns) {
 	this.ctx.save();
 	
 	for (var column = 0; column < this.resolution; column++) {
 	  var angle = this.fov * (column / this.resolution - 0.5);
 	  var ray = map.cast(player, player.direction + angle, this.range);
-	  this.drawColumn(column, ray, angle, map, player);
+	  columns.push(this.drawColumn(column, ray, angle, map, player));
 	}
 	
 	this.ctx.restore();
@@ -717,7 +726,7 @@ Camera.prototype.drawMissile = function(player, map, missileIndex){
 	}
 };
 
-Camera.prototype.drawEnemyColumn = function(player, column, sprites, map){
+Camera.prototype.drawEnemyColumn = function(player, column, sprites, map, prevDistance){
 	
 	var ctx = this.ctx; 
 	var left = Math.floor(column * this.spacing);
@@ -736,7 +745,8 @@ Camera.prototype.drawEnemyColumn = function(player, column, sprites, map){
 		
 		bDrawSprite = 
 			left > sprite.xoffset - (sprite.width / 2) &&
-			left < sprite.xoffset + (sprite.width / 2);
+			left < sprite.xoffset + (sprite.width / 2) &&
+			sprite.distance < prevDistance;
 		
 		if(bDrawSprite){
 			height = sprite.height;
@@ -745,12 +755,18 @@ Camera.prototype.drawEnemyColumn = function(player, column, sprites, map){
 			
 			ctx.drawImage(enemyBM.image, textureX, 0, 1, enemyBM.height, left, top, width, height);
 			
+			prevDistance = sprite.distance;
+			
 			
 		}
 		
-		if(sprite.distance < 2)
-				debugger;
+		
+		
+		// if(sprite.distance < 2)
+				// debugger;
 	}
+	
+	return prevDistance;
 		
 }
 
@@ -803,6 +819,8 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	
 	var scaleFactor = 0.01 + Math.abs(distance);
 	var width = .5 * this.width / scaleFactor; //Multiples of a fraction of wall spacing
+	
+	/** 3 ray check buggy, removing and letting columns array check decide **/
 	// var hyp = Math.sqrt(distance * distance + width * width);
 	// var theta = Math.asin(width / hyp);
 	
@@ -994,12 +1012,14 @@ Camera.prototype.drawColumn = function(column, ray, angle, map, player) {
 	var left = Math.floor(column * this.spacing);
 	var width = Math.ceil(this.spacing);
 	var hit = -1;
+	var step;
+	var distance = 1000;
 	
 	// Increment hit till first ray element that is a wall
 	while (++hit < ray.length && ray[hit].height <= 0);
 
 	for (var s = ray.length - 1; s >= 0; s--) {
-	  var step = ray[s];
+	  step = ray[s];
 	  var rainDrops = Math.pow(Math.random(), 3) * s;
 	  var rain = (rainDrops > 0) && this.project(0.1, angle, step.distance);
 
@@ -1020,6 +1040,8 @@ Camera.prototype.drawColumn = function(column, ray, angle, map, player) {
       // ctx.globalAlpha = Math.max((step.distance + step.shading) / this.lightRange - map.light, 0);
       // ctx.fillRect(left, wall.top, width, wall.height);
 			// ctx.restore();
+			
+			distance = step.distance;
 	  }
 		
 		// Draw ground tiles in spaces between walls
@@ -1063,6 +1085,8 @@ Camera.prototype.drawColumn = function(column, ray, angle, map, player) {
 	  // ctx.globalAlpha = 0.15;
 	  // while (--rainDrops > 0) ctx.fillRect(left, Math.random() * rain.top, 1, rain.height);
 	}
+	
+	return distance;
 };
 
 /** For projecting wall texture to find varying draw height for distance from player **/
