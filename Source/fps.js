@@ -766,6 +766,7 @@ Camera.prototype.drawEnemyColumn = function(player, column, sprites, map, prevDi
 				// debugger;
 	}
 	
+	debugger;
 	return prevDistance;
 		
 }
@@ -791,7 +792,6 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	
 	if(distance > limit){
 		console.debug("FAILED DISTANCE < " + limit + " CHECK, distance: " + distance);
-		// debugger;
 		return render;
 	}
 	
@@ -804,66 +804,41 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	if(diffX != 0, diffY != 0)
 		angle = Math.atan2(diffY, diffX) - Math.PI;
 	
-	//correct for negative angles
-	if(angle < 0){
-		angle = 2 * Math.PI + angle;
-	}
+	// //correct for negative angles EDIT: removing as dangle checks compensate and fix culling err
+	// if(angle < 0){
+		// angle = 2 * Math.PI + angle;
+	// }
 	
+	//Get angle difference
 	var dAngle = player.direction - angle;
 	
-	if(dAngle >= Math.PI)
+	//Convert angles greater than PI to angles of range -PI <= angle <= 0
+	if(dAngle >= CIRCLE / 2){
 		dAngle -= CIRCLE;
+	}
 	
-	/*
-	TODO: DEBUG: Enemies in FOV not rendering.
+	//Prevent xoffset error from when enemy is east of player, and in leftside view
+	//Shouldn't be possible now but we'll see
+	if(dAngle > 1.5*Math.PI){
+		dAngle = dAngle - CIRCLE;
+	}
 	
-	FOV check seems to work right, but edge case of enemy not being rendered while in FOV
-	still exists.
-	
-	Also it is consistent. Only when the enemy is to the east as shown by the minimap, if I pivot
-	right, before the enemy is out of FOV it disappears from the left side of the screen where it
-	should be.
-	
-	Does not apply in other directions, does not occur if I pivot left.
-	*/
 	var fovLimit = this.fov / 2 + Math.PI / 6;
 	var fov = dAngle;
 	if(Math.abs(fov) >= Math.PI)
 		fov = 2*Math.PI - Math.abs(fov);	
 	if(Math.abs(fov) > fovLimit){
 		console.debug("Failed FOV check, FOV delta: " + Math.abs(fov) + ", FOV limit: " +  fovLimit);
-		debugger;
 		return render;
 	}
 	console.debug("Passed FOV check, FOV delta: " + fov + ", FOV limit: " +  fovLimit);
 	
 	var scaleFactor = 0.01 + Math.abs(distance);
 	var width = .5 * this.width / scaleFactor; //Multiples of a fraction of wall spacing
-	
-	/** 3 ray check buggy, removing and letting columns array check decide **/
-	// var hyp = Math.sqrt(distance * distance + width * width);
-	// var theta = Math.asin(width / hyp);
-	
-	// var ray = map.cast(player, angle, distance);
-	// var hit = getHit(ray);
-	// var end = ray[ray.length - 1];
-	// var ray2 = map.cast(player, angle - theta, distance);
-	// var hit2 = getHit(ray2);
-	// var end2 = ray2[ray2.length - 1];
-	// var ray3 = map.cast(player, angle + theta, distance);
-	// var hit3 = getHit(ray3);
-	// var end3 = ray3[ray3.length - 1];
-	
-	// // If 3 rays are blocked, do not draw
-	// if(hit < ray.length && hit2 < ray2.length && hit3 < ray3.length){
-			// console.debug("FAILED 3RAY CHECK");
-			// return render;
-	// }
-	
 	var height = .7 * this.height / scaleFactor; //Scaled multiples of wall spacing fraction
 	var top = (this.height / 2) * ( 1 + 1 / scaleFactor) - height;
 	var ratio = this.width / this.fov;
-	var xoffset = (this.width / 2) - (ratio * dAngle);
+	var xoffset = (this.width / 2) - (ratio * dAngle);//debug: error when enemy east of player
 	var numColumns = (width / this.width) * this.resolution;
 	var c1 = Math.floor( (xoffset - width / 2) / this.width * this.resolution);
 	
@@ -882,11 +857,15 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	render.bDraw = true;
 	render.sprite = sprite;
 	
-	//For debugging
+	//For debugging general position, culling
 	// ctx.fillStyle = 'red';
 	// ctx.fillRect(xoffset, this.height / 2, 3, 3);
 	
-	//debugger;
+	//For debugging xoffset by pointing from screen center towards xoffset.
+	//If line jumps offscreen, or jitters direction, suspect xoffset error
+	//this.drawLine(this.width / 2, this.height / 2, xoffset, this.height/2, "#0000FF");
+	
+	debugger;
 	return render;
 	
 };
