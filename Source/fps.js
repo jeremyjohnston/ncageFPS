@@ -790,7 +790,8 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var ctx = this.ctx;
 	
 	if(distance > limit){
-		//console.debug("FAILED DISTANCE < " + limit + " CHECK, distance: " + distance);
+		console.debug("FAILED DISTANCE < " + limit + " CHECK, distance: " + distance);
+		// debugger;
 		return render;
 	}
 	
@@ -809,13 +810,32 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	}
 	
 	var dAngle = player.direction - angle;
+	
 	if(dAngle >= Math.PI)
 		dAngle -= CIRCLE;
 	
-	if(Math.abs(dAngle) - Math.PI/36 > this.fov / 2){
-		//console.debug("FAILED FOV CHECK, dAngle: " + dAngle);
+	/*
+	TODO: DEBUG: Enemies in FOV not rendering.
+	
+	FOV check seems to work right, but edge case of enemy not being rendered while in FOV
+	still exists.
+	
+	Also it is consistent. Only when the enemy is to the east as shown by the minimap, if I pivot
+	right, before the enemy is out of FOV it disappears from the left side of the screen where it
+	should be.
+	
+	Does not apply in other directions, does not occur if I pivot left.
+	*/
+	var fovLimit = this.fov / 2 + Math.PI / 6;
+	var fov = dAngle;
+	if(Math.abs(fov) >= Math.PI)
+		fov = 2*Math.PI - Math.abs(fov);	
+	if(Math.abs(fov) > fovLimit){
+		console.debug("Failed FOV check, FOV delta: " + Math.abs(fov) + ", FOV limit: " +  fovLimit);
+		debugger;
 		return render;
 	}
+	console.debug("Passed FOV check, FOV delta: " + fov + ", FOV limit: " +  fovLimit);
 	
 	var scaleFactor = 0.01 + Math.abs(distance);
 	var width = .5 * this.width / scaleFactor; //Multiples of a fraction of wall spacing
@@ -862,78 +882,13 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	render.bDraw = true;
 	render.sprite = sprite;
 	
-	ctx.fillStyle = 'red';
-	ctx.fillRect(xoffset, this.height / 2, 3, 3);
+	//For debugging
+	// ctx.fillStyle = 'red';
+	// ctx.fillRect(xoffset, this.height / 2, 3, 3);
 	
+	//debugger;
 	return render;
 	
-	
-	
-	// console.log(
-	// "Angle " + angle + "\n"
-	// + "dAngle " + dAngle + ", " + deg(dAngle) + "°\n"
-	// + "Theta " + theta + ", " + deg(theta) +  "°\n");
-	
-	// var startX = this.width / 2;
-	// var startY = 1.5 * this.height;
-	// var mid = this.height / 2;
-	// this.drawLine(startX, startY, left, mid, "green");
-	// this.drawLine(startX, startY, left-width/2, mid, "red");
-	// this.drawLine(startX, startY, left+width/2, mid, "blue");
-	//this.drawLine(startX, startY, ray2L, mid, "white");
-	//this.drawLine(startX, startY, ray3L, mid, "black");
-
-	// var delta = 2 * theta / strips;
-	// var colW = width / strips;
-	// var offset = 0;
-	
-	// var L = left - colW * strips / 2;
-	// var tX = 0;
-	// var W = enemyBM.width/strips;
-	// var beta = 0;
-	// var trueBeta = 0;
-	// var z = 0;
-	// var rayb;
-	// var hitb = -1;
-	// var color = 0;
-	
-	// for(var col = 0; col < 2 * theta; col += delta){
-		// beta = angle - theta + col;
-		// trueBeta = trueAngle - theta + col;
-		// z = distance * Math.cos(beta);
-		// rayb = map.cast(player, trueBeta, distance);
-		// hitb = -1;
-		// while(++hitb < rayb.length && rayb[hitb].height <= 0);
-		
-		// var angleB = player.direction - trueBeta;
-		// var rayBcol = this.resolution * (angleB / this.fov + 0.5);
-		// var rayBL = Math.floor(this.width - rayBcol * this.spacing);//Math.floor(this.width - rayBcol * this.spacing - enemyBM.width/(4+z));
-		
-		
-		
-		// if(hitb < rayb.length){
-			// tX = Math.floor(enemyBM.width * offset / strips);
-			// ctx.drawImage(enemyBM.image, tX, 0, colW, enemyBM.height, this.width - rayBL, enemyP.top, W, enemyBM.height);
-			// this.drawLine(startX, startY, rayBL, mid, "green");
-		// }
-		// else{
-			// this.drawLine(startX, startY, rayBL, mid, "red");
-		// }
-		
-		// // if(color <= 999999)
-			// // this.drawLine(startX, startY, rayBL, mid, "#" + color.toString());
-		
-		// L+=colW;
-		// offset++;
-		// if(color < 888888);
-			// color+=111111;
-		
-		
-		
-		
-	// }
-	
-	//ctx.drawImage(enemyBM.image, left, enemyP.top, width, enemyP.height);
 };
 
 Camera.prototype.drawReticle = function(texture){
@@ -1160,7 +1115,7 @@ var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
 var enemies = [];
-var enemyCount = 1;
+var enemyCount = 10;
 
 for(var i = 0; i < enemyCount; i++){
 	enemies.push(new Enemy(0.2, 100, 100, enemyBM));
