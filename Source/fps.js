@@ -68,7 +68,11 @@ var weaponBM = ripper;
 var missileBM = box;
 var reticleBM = reticle;
 var enemyBM = bunny;
-var _boomBM = explosions;
+var boomBM = explosions;
+
+var enemyTextureData = new TextureData(enemyBM, false,0,0,0,0,0,0);
+var missileTextureData = new TextureData(missileBM, false,0,0,0,0,0,0);
+var boomTextureData = new TextureData(boomBM, true, 0, 105, 56, 56, 58.9, 0);
 
 
 /** Control Object **/
@@ -124,10 +128,21 @@ function Bitmap(src, width, height) {
 	this.height = height;
 }
 
-//TODO: Weapon and Projectile classes once projectile test works
-//Prototype should be an image fired from the position and a direction of the player, scaling down over time and distance
-//2nd ver should remember position it was originally fired in, and hide from player when player turns away from it
-//3rd ver should raytrace between player and itself, and disappear if hidden by geometry
+/** Texture Data 
+
+		Data includes bitmap to use, whether to treat as a sprite sheet, 
+		and sprite sheet cell information, such as cell size, and cell offsets.
+**/
+function TextureData(bitmap, bSpriteSheet, cellX, cellY, cellWidth, cellHeight, cellDX, cellDY){
+	this.bitmap = bitmap;
+	this.bSpriteSheet = bSpriteSheet;
+	this.cellX = cellX;
+	this.cellY = cellY;
+	this.cellWidth = cellWidth;
+	this.cellHeight = cellHeight;
+	this.cellDX = cellDX;
+	this.cellDY = cellDY;
+}
 
 /** Player **/
 function Player(x, y, direction, weapon){
@@ -135,8 +150,7 @@ function Player(x, y, direction, weapon){
 	this.y = y;
 	this.direction = direction;
 	this.weapon = weapon;
-	this.paces = 0; //distance traveled overall
-	this.framesSinceFire = 1000;//remove after new missile code works
+	this.paces = 0; //distance travelled overall
 }
 
 Player.prototype.rotate = function(angle){
@@ -147,22 +161,18 @@ Player.prototype.walk = function(distance, map){
 	var dx = Math.cos(this.direction) * distance;
 	var dy = Math.sin(this.direction) * distance;
 	
-	if (map.get(this.x + dx, this.y) <=0 && this.x + dx >= 0 - map.offset && this.x + dx <= map.offset ) 
+	if(map.get(this.x + dx, this.y) <=0 && this.x + dx >= 0 - map.offset && this.x + dx <= map.offset) 
 		this.x += dx;
-	if (map.get(this.x, this.y + dy) <=0 && this.y + dy >= 0 - map.offset && this.y + dy <= map.offset)
+	if(map.get(this.x, this.y + dy) <=0 && this.y + dy >= 0 - map.offset && this.y + dy <= map.offset)
 		this.y += dy;
 		
 	this.paces += distance;
 };
 
 Player.prototype.fire = function(seconds, map){
-	this.framesSinceFire = 1;
 	
 	//Increment fire index, and if we can fire another missile do so
 	this.weapon.missileIndex = (this.weapon.missileIndex + 1) % this.weapon.missileMax;
-	
-	// this.weapon.missiles[this.weapon.missileIndex].reset();
-	// this.weapon.missiles[this.weapon.missileIndex].fire(player.x, player.y, player.direction, 600);
 	
 	//If we cannot fire, player must wait till a previous missile expires
 	if(!this.weapon.missiles[this.weapon.missileIndex].alive)
@@ -189,7 +199,6 @@ Player.prototype.update = function(controls, map, seconds) {
 		}
 	}
 	
-	player.framesSinceFire++;
 
 	
 	
@@ -213,29 +222,25 @@ function Weapon(weaponBM, missile, missileMax){
 	
 	
 	for(var i = 0; i < missileMax; i++){
-		this.missiles.push( new Missile(missile.x, missile.y, missile.direction, missile.velocity, missile.missileBM, missile.boomBM, missile.boomSize, missile.boomX, missile.boomY, missile.boomDX) );
+		this.missiles.push( new Missile(missile.x, missile.y, missile.direction, missile.velocity, missile.missileTD, missile.boomTD) );
 	}
 }
 
 /** Missile **/
-function Missile(x, y, direction, velocity, missileBM, boomBM, boomSize, boomX, boomY, boomDX){
+function Missile(x, y, direction, velocity, missileTD, boomTD){
 	this.x = x;
 	this.y = y;
 	this.direction = direction;
 	this.velocity = velocity;
-	this.missileBM = missileBM;
+	
+	this.missileTD = missileTD;
+	this.boomTD = boomTD;
+	this.textureData = missileTD;//active texture
+	
 	this.distance = 0;
-	
-	this.alive = false;
 	this.lifetime = 0;
-	
-	this.explode = false; 
-	this.boomBM = boomBM;//explosion texture
-	this.boomSize = boomSize;
-	this.boomX = boomX;//
-	this.boomY = boomY;//105;
-	this.boomDX = boomDX;
-	
+	this.alive = false;
+	this.explode = false;
 }
 
 Missile.prototype.fire = function(x, y, direction, lifetime){
@@ -269,7 +274,7 @@ Missile.prototype.travel = function(distance, map){
 		this.lifetime -= 1;
 		this.distance = map.distance(player, this); //update distance from player
 		if(this.lifetime < 30){
-			this.missileBM = explosions;
+			this.textureData = this.boomTD;
 			this.explode = true;
 		}
 	}
@@ -279,8 +284,9 @@ Missile.prototype.travel = function(distance, map){
 		this.distance = map.distance(player, this); //update distance from player
 
 		//Fake spawn explosion by swapping texture for last second of lifetime
-		this.missileBM = explosions;
+		this.textureData = this.boomTD;
 		this.explode = true;
+		this.boomTD.cellX = (this.boomTD.cellX + this.boomTD.cellDX) % this.boomTD.bitmap.width;
 	}
 	else{
 		//Tick explosion lifetime
@@ -293,32 +299,33 @@ Missile.prototype.travel = function(distance, map){
 		  // this.missileBM = laser2;
 			
 		this.distance = map.distance(player, this); //update distance from player
+		this.boomTD.cellX = (this.boomTD.cellX + this.boomTD.cellDX) % this.boomTD.bitmap.width;
 
 	}
 	
 	if(this.lifetime < 0){
 	  this.reset();
 	}
-	
+		
 };
 
 Missile.prototype.reset = function(){
   this.distance = 0;
 	this.alive = false;
 	this.lifetime = 0;
-	this.missileBM = box;
+	this.textureData = this.missileTD;
 	this.explode = false;
-	this.boomX = 0;
-	this.boomY = 105;
+	this.boomTD.cellX = 0;
+	this.boomTD.cellY = 105;
 };
 
 /** Enemy **/
-function Enemy(velocity, health, damage, enemyBM){
+function Enemy(velocity, health, damage, textureData){
 	
 	this.velocity = velocity;
 	this.health = health;
 	this.damage = damage;
-	this.enemyBM = enemyBM;
+	this.textureData = textureData;
 	this.alive = false;
 	this.paces = 0; //track overall movement to get an idea of time alive
 	this.distance = 1000; //from player
@@ -574,11 +581,12 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 	this.drawSky(player.direction, map.skybox, map.light);
 	this.drawTerrain(player.direction, groundBM, map.light);
 	this.drawColumns(player, map, columns);
-	this.drawEnemies(player, enemies, map, columns);
+	this.drawEntities(player, enemies, map, columns);
 		
-	for(var i = 0; i < player.weapon.missileMax; i++){
-		this.drawMissile(player, map, i);
-	}
+	// for(var i = 0; i < player.weapon.missileMax; i++){
+		// this.drawMissile(player, map, i);
+	// }
+	this.drawEntities(player, player.weapon.missiles, map, columns);//TODO: Need alg to account for drawing explosions, so separate func for sprite sheets and texture swaps. AS it is will only draw missile texture and not explosion
 	
 	this.drawWeapon(player.weapon, player.paces);
 	this.drawReticle(reticleBM);
@@ -587,23 +595,23 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 	
 };
 
-Camera.prototype.drawEnemies = function(player, enemies, map, columns){
+Camera.prototype.drawEntities = function(player, entities, map, columns){
 	var sprites = [];
 	var s;
 	
-	for(var i = 0; i < enemies.length; i++){
-		s = this.drawEnemy(player, enemies[i], map);
-		if(s.bDraw)
+	for(var i = 0; i < entities.length; i++){
+		s = this.drawEntity(player, entities[i], map);
+		if(s.bDraw && entities[i].alive)
 			sprites.push(s.sprite);
 	}
 	
-	console.log("Rendered Enemies: " + sprites.length);
+	console.log("Rendered Entities: " + sprites.length);
 	
 	sprites.sort(function(a,b){return b.distance - a.distance});
 	
 	var newDist;
 	for(var column = 0; column < this.resolution; column++){
-		newDist = this.drawEnemyColumn(player, column, sprites, map, columns[column]);
+		newDist = this.drawEntityColumn(player, column, sprites, map, columns[column]);
 		
 		columns[column] = newDist;
 	}
@@ -670,63 +678,7 @@ Camera.prototype.drawTerrain = function(direction, texture, ambient) {
 	this.ctx.restore();
 };
 
-/**
-Draw any projectiles the player has fired. Currently only 1 missile is alive at a time.
-
-TODO: Fix how left and top are selected. Want render to make a more linear projectile; currently seems to arc.
-
-TODO: Draw using film strip. Film strip animates and
-can have images for different angles.
-
-TODO: Draws whole picture now, but need to move this to drawColumn(). Draw column should ask if a grid contains a missile, and if so, find which quadrant in that grid the missile is.
-**/
-Camera.prototype.drawMissile = function(player, map, missileIndex){
-
- 
-	var ctx = this.ctx;
-	var missile = player.weapon.missiles[missileIndex];
-	var missileBM = missile.missileBM;
-	
-	//If missile direction and player direction differ too much, don't draw
-	var angle = player.direction - missile.direction;
-	if( !missile.alive || Math.abs(angle) > (this.fov / 2) )
-		return;
-	
-	var ray = map.cast(player, angle, missile.distance);
-	var hit = -1;
-	while (++hit < ray.length && ray[hit].height <= 0);
-	
-	//If missile behind wall, don't draw
-	if(hit < ray.length)
-		return;
-		
-	var step = ray[ ray.length - 1 ];
-		
-	var missileP = this.project(1, angle, missile.distance);
-	var missileX = Math.floor(missileBM.width * step.offset);
-	var width = Math.floor(missileBM.width / (1 + 2 * missile.distance));
-	var height = Math.floor(missileBM.height / (1 + 2 * missile.distance));
-	
-	var column = this.resolution * (angle / this.fov + 0.5);
-	var left = Math.floor(this.width - column * this.spacing - missileBM.width / (4 + missile.distance));
-	var top = Math.floor(this.height * 0.6 - missileBM.height / (2 + missile.distance));//center on gun muzzle
-	
-	//debugger;
-	if(!missile.explode)
-		ctx.drawImage(missileBM.image, left, top, width, height);
-	else{
-	  //TODO: give missiles a unique explosion anim rather than updating to same in update() func
-		
-		//Draw boom
-		ctx.drawImage(missileBM.image, missile.boomX, missile.boomY, missile.boomSize, missile.boomSize, left, top, width, height);
-		
-		//Increment through sprite sheet
-		missile.boomX = (missile.boomX + missile.boomDX) % missileBM.width;
-		
-	}
-};
-
-Camera.prototype.drawEnemyColumn = function(player, column, sprites, map, prevDistance){
+Camera.prototype.drawEntityColumn = function(player, column, sprites, map, prevDistance){
 	
 	var ctx = this.ctx; 
 	var left = Math.floor(column * this.spacing);
@@ -738,6 +690,10 @@ Camera.prototype.drawEnemyColumn = function(player, column, sprites, map, prevDi
 	var height;
 	var top;
 	var bDrawSprite;
+	var imageBM;
+	var cellX;
+	var cellY;
+	var cellWidth;
 	
 	for(var i = 0; i < sprites.length; i++){
 	  sprite = sprites[i];
@@ -751,9 +707,23 @@ Camera.prototype.drawEnemyColumn = function(player, column, sprites, map, prevDi
 		if(bDrawSprite){
 			height = sprite.height;
 			top = sprite.top;
-			textureX = Math.floor( enemyBM.width / sprite.numColumns * (column - sprite.c1) );
+			imageBM = sprite.textureData.bitmap;
+			cellX = sprite.textureData.cellX;
+			cellY = sprite.textureData.cellY;
+			cellWidth = sprite.textureData.cellWidth;
+			cellHeight = sprite.textureData.cellHeight;
 			
-			ctx.drawImage(enemyBM.image, textureX, 0, 1, enemyBM.height, left, top, width, height);
+			if(!sprite.textureData.bSpriteSheet){
+				//Draw column of image
+				textureX = Math.floor( imageBM.width / sprite.numColumns * (column - sprite.c1) );
+				ctx.drawImage(imageBM.image, textureX, 0, 1, imageBM.height, left, top, width, height);
+			}
+			else{
+				//Draw column of sprite cell
+				textureX = Math.floor( cellWidth / sprite.numColumns * (column - sprite.c1) );
+				ctx.drawImage(imageBM.image, textureX+cellX, cellY, 1, cellHeight, left, top, width, height);
+				
+			}
 			
 			prevDistance = sprite.distance;
 			
@@ -771,22 +741,23 @@ Camera.prototype.drawEnemyColumn = function(player, column, sprites, map, prevDi
 		
 }
 
+
 /**
-  Draw enemy by dividing texture into columns.
+  Draw entity by dividing texture into columns.
 	
-	Divides image into columns, and casts rays for each to determine occlusion by
+	Divides image into columns, and casts rays for each to determine culling by
 	environment.
 **/
-Camera.prototype.drawEnemy = function(player, enemy, map){
+Camera.prototype.drawEntity = function(player, entity, map){
 	
 	var render = { bDraw: false, sprite: 0};
 	
-	if(!enemy.alive){
+	if(!entity.alive){
 		//console.debug("FAILED ALIVE CHECK");
 		return render;
 	}
 	
-	var distance = Math.abs(map.distance(player, enemy));
+	var distance = Math.abs(map.distance(player, entity));
 	var limit = this.range * 2;	
 	var ctx = this.ctx;
 	
@@ -795,19 +766,14 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 		return render;
 	}
 	
-	// If missile direction and player direction differ too much, don't draw
-	var diffX = player.x - enemy.x;
-	var diffY = player.y - enemy.y;
+	// If entity direction and player direction differ too much, don't draw
+	var diffX = player.x - entity.x;
+	var diffY = player.y - entity.y;
 	var angle = 0;
 	
 	//Note: atan2() udf at diffX = 0, diffY = 0.
 	if(diffX != 0, diffY != 0)
 		angle = Math.atan2(diffY, diffX) - Math.PI;
-	
-	// //correct for negative angles EDIT: removing as dangle checks compensate and fix culling err
-	// if(angle < 0){
-		// angle = 2 * Math.PI + angle;
-	// }
 	
 	//Get angle difference
 	var dAngle = player.direction - angle;
@@ -817,7 +783,7 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 		dAngle -= CIRCLE;
 	}
 	
-	//Prevent xoffset error from when enemy is east of player, and in leftside view
+	//Prevent xoffset error from when entity is east of player, and in leftside view
 	//Shouldn't be possible now but we'll see
 	if(dAngle > 1.5*Math.PI){
 		dAngle = dAngle - CIRCLE;
@@ -828,10 +794,10 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	if(Math.abs(fov) >= Math.PI)
 		fov = 2*Math.PI - Math.abs(fov);	
 	if(Math.abs(fov) > fovLimit){
-		console.debug("Failed FOV check, FOV delta: " + Math.abs(fov) + ", FOV limit: " +  fovLimit);
+		//console.debug("Failed FOV check, FOV delta: " + Math.abs(fov) + ", FOV limit: " +  fovLimit);
 		return render;
 	}
-	console.debug("Passed FOV check, FOV delta: " + fov + ", FOV limit: " +  fovLimit);
+	//console.debug("Passed FOV check, FOV delta: " + fov + ", FOV limit: " +  fovLimit);
 	
 	var scaleFactor = 0.01 + Math.abs(distance);
 	var width = .5 * this.width / scaleFactor; //Multiples of a fraction of wall spacing
@@ -843,16 +809,18 @@ Camera.prototype.drawEnemy = function(player, enemy, map){
 	var c1 = Math.floor( (xoffset - width / 2) / this.width * this.resolution);
 	
 	var sprite = {
-		width: width,
-		height: height,
-		top: top,
-		angle: dAngle,
-		xoffset: xoffset,
-		distance: distance,
-		numColumns: numColumns,
-		c1: c1,
-		distance: distance
+			width: width,
+			height: height,
+			top: top,
+			angle: dAngle,
+			xoffset: xoffset,
+			distance: distance,
+			numColumns: numColumns,
+			c1: c1,
+			distance: distance,
+			textureData: entity.textureData
 	}
+	
 	
 	render.bDraw = true;
 	render.sprite = sprite;
@@ -1080,7 +1048,7 @@ GameLoop.prototype.frame = function(time) {
 // Create each object
 var display = document.getElementById('display');
 
-var _missile = new Missile(0, 0, Math.PI * 0.3, 8, missileBM, _boomBM, 56, 0, 105, 58.9);
+var _missile = new Missile(0, 0, Math.PI * 0.3, 8, missileTextureData, boomTextureData);
 var weapon = new Weapon(weaponBM, _missile, 20);
 
 
@@ -1097,7 +1065,7 @@ var enemies = [];
 var enemyCount = 10;
 
 for(var i = 0; i < enemyCount; i++){
-	enemies.push(new Enemy(0.2, 100, 100, enemyBM));
+	enemies.push(new Enemy(0.2, 100, 100, enemyTextureData));
 }
 
 map.spawn(enemies);
