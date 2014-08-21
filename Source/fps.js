@@ -309,6 +309,11 @@ Missile.prototype.travel = function(distance, map){
 		
 };
 
+Missile.prototype.collide = function(){
+	this.explode = true;
+	this.lifetime = 30;
+};
+
 Missile.prototype.reset = function(){
   this.distance = 0;
 	this.alive = false;
@@ -413,6 +418,11 @@ Enemy.prototype.update = function(map, seconds, player){
 	this.distance = map.distance(player, this, map);
 };
 
+Enemy.prototype.collide = function(){
+	this.alive = false;
+	this.health = 0;
+};
+
 /** Map **/
 function Map(size, margin, wallBM, skyBM, groundBM){
   this.margin = margin;
@@ -423,6 +433,7 @@ function Map(size, margin, wallBM, skyBM, groundBM){
 	this.groundTexture = groundBM; // new Bitmap('nicolas-cage-expendables-3.jpg', 600, 397);
 	this.light = 0;
 	this.offset = 5 + this.size;//boundary offset from grid
+	this.score = 0;
 }
 
 Map.prototype.get = function(x, y){
@@ -460,6 +471,58 @@ Map.prototype.check = function(x, y, s, t){
 		return true;
 		
 	return false;
+};
+
+Map.prototype.posCheck = function(a, b, radius){
+	var dx = a.x - b.x;
+	var dy = a.y - b.y;
+	var dist = dx * dx + dy * dy;
+	var result;
+	radius = radius * radius;
+	
+	//debugger;
+	if(radius > dist){
+		result = true;
+		//console.warn("  Collision! | radius2: " + radius + ", dist2: " + dist);
+	}
+	else{
+		result = false;
+		//console.warn("No collision | radius2: " + radius + ", dist2: " + dist);
+	}
+		
+	return result;
+	
+};
+
+
+/** Compare two sets of different entities for occupying the same grid.
+		
+		Assumes each array type has a collide() function.
+ **/
+Map.prototype.collisionCheck = function(entities, projectiles){
+	
+	for(var i = 0; i < projectiles.length; i++){
+		if(!projectiles[i].alive)
+			continue;
+			
+		//debugger;
+		
+		for(var j = 0; j < entities.length; j++){
+			if(!entities[j].alive)
+				continue;
+			
+			if(this.posCheck(projectiles[i], entities[j], 0.5)){
+				entities[j].collide();
+				projectiles[i].collide();
+				this.score++;
+			}
+			
+			
+		}
+		
+			
+		
+	}
 };
 
 Map.prototype.randomize = function() {
@@ -592,6 +655,10 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 	this.drawReticle(reticleBM);
 	
 	this.drawMinimap(player, enemies, map);
+	this.drawScore(map.score);
+	
+	if(map.score == enemies.length)
+		this.drawWin();
 	
 };
 
@@ -736,7 +803,7 @@ Camera.prototype.drawEntityColumn = function(player, column, sprites, map, prevD
 				// debugger;
 	}
 	
-	debugger;
+	//debugger;
 	return prevDistance;
 		
 }
@@ -833,7 +900,7 @@ Camera.prototype.drawEntity = function(player, entity, map){
 	//If line jumps offscreen, or jitters direction, suspect xoffset error
 	//this.drawLine(this.width / 2, this.height / 2, xoffset, this.height/2, "#0000FF");
 	
-	debugger;
+	//debugger;
 	return render;
 	
 };
@@ -843,6 +910,21 @@ Camera.prototype.drawReticle = function(texture){
 	var y = this.height/2 - texture.height/2;
 	this.ctx.drawImage(texture.image, x, y, texture.width, texture.height);
 };
+
+Camera.prototype.drawScore = function(score){
+	var text = "Your score is: " + score;
+	this.ctx.fillStyle = "#FF0000";
+	this.ctx.font="20px Georgia";
+	this.ctx.fillText(text, 0.5 * this.width, 50);
+
+};
+
+Camera.prototype.drawWin = function(){
+	var text = "WIN";
+	this.ctx.fillStyle = "#FF0000";
+	this.ctx.font="200px Georgia";
+	this.ctx.fillText(text, 0.2 * this.width, 0.7 * this.height);
+}
 
 Camera.prototype.drawLine = function(x, y, x2, y2, color){
 	ctx = this.ctx;
@@ -886,7 +968,8 @@ Camera.prototype.drawMinimap = function(player, enemies, map){
 	//Enemy
 	this.ctx.fillStyle = '#FF0000';
 	for(var i = 0; i < enemies.length; i++){
-		this.ctx.fillRect(enemies[i].x * size + offset, enemies[i].y * size + offset, size/2, size/2);
+		if(enemies[i].alive)
+			this.ctx.fillRect(enemies[i].x * size + offset, enemies[i].y * size + offset, size/2, size/2);
 	}
 	
 	//Player, and player view direction
@@ -1062,7 +1145,7 @@ var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
 var enemies = [];
-var enemyCount = 10;
+var enemyCount = 1;
 
 for(var i = 0; i < enemyCount; i++){
 	enemies.push(new Enemy(0.2, 100, 100, enemyTextureData));
@@ -1084,11 +1167,13 @@ var played = false;
 // Start Game
 loop.start(function frame(seconds) {
 	map.update(seconds);
-	player.update(controls.states, map, seconds);
+	player.update(controls.states, map, seconds);//player update() updates missiles
 	
 	for(var i = 0; i < enemyCount; i++){
-		Enemy.prototype.update.call(enemies[i], map, seconds, player);//Treat enemies[i] elem as Enemy type, and call function with elem as 'this'
+		enemies[i].update(map, seconds, player);
 	}
+	
+	map.collisionCheck(enemies, player.weapon.missiles);
 	
 	camera.render(player, enemies, map, seconds);
 	
