@@ -33,6 +33,8 @@ all entities define an x, y, w, h, and dx to draw from the sheet.
 
 TODO: maybe make the game about chasing bunnies that get faster as you damage them,
 while avoiding bees.
+
+tinyurl: http://tinyurl.com/nbtwkcb
 */
 
 var CIRCLE = Math.PI * 2;
