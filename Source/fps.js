@@ -40,21 +40,21 @@ var MOBILE = /Android|webOS|iPhone|iPad|iPod|BlackBerry/i.test(navigator.userAge
 
 // Weapon textures
 var ripper = new Bitmap('../Assets/ripper.png', 320, 242);
-var heart = new Bitmap('../Assets/heart2.png', 229, 220);
+//var heart = new Bitmap('../Assets/heart2.png', 229, 220);
 var box = new Bitmap('../Assets/box2.png', 347, 346);
-var laser = new Bitmap('../Assets/explosion.png', 256, 256);
-var laser2 = new Bitmap('../Assets/explosion2.png', 256, 256);
+//var laser = new Bitmap('../Assets/explosion.png', 256, 256);
+//var laser2 = new Bitmap('../Assets/explosion2.png', 256, 256);
 
 var explosions = new Bitmap('../Assets/explosions.png', 532, 272);
 
 var reticle = new Bitmap('../Assets/reticle.png', 32, 32);
 
 // Wall textures
-var confused = new Bitmap('../Assets/expendablesConfused.jpg', 600, 397);
+//var confused = new Bitmap('../Assets/expendablesConfused.jpg', 600, 397);
 
 // Sky textures
 var cagebox = new Bitmap('../Assets/cagebox.jpg', 1920, 1080);
-var clouds = new Bitmap('../Assets/seamlessClouds.jpg', 800, 553);
+//var clouds = new Bitmap('../Assets/seamlessClouds.jpg', 800, 553);
 
 // Ground textures
 var bw = new Bitmap('../Assets/bw.jpg', 250, 202);
@@ -80,8 +80,8 @@ var missileTextureData = new TextureData(missileBM, false,0,0,0,0,0,0);
 var boomTextureData = new TextureData(boomBM, true, 0, 105, 56, 56, 58.9, 0);
 
 var audio_theme1 = document.getElementById("HiddenDanger_theme213");	//by Kevin Macleod
-var audio_theme2 = document.getElementById("OvertDanger_theme105");		//by Kevin Macleod
-var audioAK_line = document.getElementById("AK_line");								//by Nicolas Cage
+//var audio_theme2 = document.getElementById("OvertDanger_theme105");		//by Kevin Macleod
+//var audioAK_line = document.getElementById("AK_line");								//by Nicolas Cage
 var audioBunny_line = document.getElementById("BunnyInBox_line");			//by Nicolas Cage
 var audioShoot_effect = document.getElementById("shoot1_effect"); 		//using bfxr.net
 var audioExplode1_effect = document.getElementById("explode1_effect"); 		//using bfxr.net
