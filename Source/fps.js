@@ -17,8 +17,10 @@ Could be as simple as "kill" or "hit with bait" to teleport bunnies back into th
 Boss spawn could use badman line from gone in 60 sec
 
 another good res http://www.spriters-resource.com
-http://www.8bitpeoples.com/discography/by/bit_shifter
+http://www.8bitpeoples.com/discography/by/bit_shifter <-- activation.mp3
 http://chipmusic.org/
+
+http://freepd.com/70s%20Sci%20Fi/Overt%20Danger%20A and other Kevin Macleod creations
 
 some ideas
 -first lvl find ak
@@ -73,6 +75,15 @@ var boomBM = explosions;
 var enemyTextureData = new TextureData(enemyBM, false,0,0,0,0,0,0);
 var missileTextureData = new TextureData(missileBM, false,0,0,0,0,0,0);
 var boomTextureData = new TextureData(boomBM, true, 0, 105, 56, 56, 58.9, 0);
+
+var audio_theme1 = document.getElementById("HiddenDanger_theme213");	//by Kevin Macleod
+var audio_theme2 = document.getElementById("OvertDanger_theme105");		//by Kevin Macleod
+var audioAK_line = document.getElementById("AK_line");								//by Nicolas Cage
+var audioBunny_line = document.getElementById("BunnyInBox_line");			//by Nicolas Cage
+var audioShoot_effect = document.getElementById("shoot1_effect"); 		//using bfxr.net
+var audioExplode1_effect = document.getElementById("explode1_effect"); 		//using bfxr.net
+var audioExplode2_effect = document.getElementById("explode2_effect"); 		//using bfxr.net
+
 
 
 /** Control Object **/
@@ -250,6 +261,8 @@ Missile.prototype.fire = function(x, y, direction, lifetime){
 	this.direction = direction;
 	this.alive = true;
 	this.lifetime = lifetime; //max time to render (until missile hits a wall)
+	
+	audioShoot_effect.play();
 };
 
 Missile.prototype.update = function(map, seconds){
@@ -287,6 +300,12 @@ Missile.prototype.travel = function(distance, map){
 		this.textureData = this.boomTD;
 		this.explode = true;
 		this.boomTD.cellX = (this.boomTD.cellX + this.boomTD.cellDX) % this.boomTD.bitmap.width;
+		
+		//debugger;
+		if(!audioExplode1_effect.ended)
+			audioExplode1_effect.currentTime = 0;
+		
+		audioExplode1_effect.play();
 	}
 	else{
 		//Tick explosion lifetime
@@ -356,14 +375,15 @@ Enemy.prototype.rotate = function(angle){
 Enemy.prototype.walk = function(player, distance, map){
 
 	//Ask if player is nearby, and if so walk towards player
-	if(map.distance(player, this) < -1){
+	if(map.distance(player, this) < 5){
 		this.attack(player, distance, map);
 	}
 	else{	//Else walk in random direction
-		//var c = Math.floor(Math.random() * 4) / 4;
-		//this.direction = CIRCLE * c;
-		//debug: test walking in a circle
-		this.rotate(Math.PI/32);
+		var c = Math.floor(Math.random() * 4) / 4;
+		this.direction = CIRCLE * c;
+		
+		
+		//this.rotate(Math.PI/32);//debug: test walking in a circle
 		
 		var dx = Math.cos(this.direction) * distance;
 		var dy = Math.sin(this.direction) * distance;
@@ -421,6 +441,11 @@ Enemy.prototype.update = function(map, seconds, player){
 Enemy.prototype.collide = function(){
 	this.alive = false;
 	this.health = 0;
+	
+	//So the sound will always refire even if it is being played by another enemy
+	if(!audioExplode2_effect.ended)
+			audioExplode2_effect.currentTime = 0;
+	audioExplode2_effect.play();
 };
 
 /** Map **/
@@ -657,7 +682,7 @@ Camera.prototype.render = function(player, enemies, map, seconds) {
 	this.drawMinimap(player, enemies, map);
 	this.drawScore(map.score);
 	
-	if(map.score == enemies.length)
+	if(winCondition(enemies))
 		this.drawWin();
 	
 };
@@ -912,10 +937,10 @@ Camera.prototype.drawReticle = function(texture){
 };
 
 Camera.prototype.drawScore = function(score){
-	var text = "Your score is: " + score;
+	var text = "Bunnies Boxed: " + score;
 	this.ctx.fillStyle = "#FF0000";
 	this.ctx.font="20px Georgia";
-	this.ctx.fillText(text, 0.5 * this.width, 50);
+	this.ctx.fillText(text, 0.4 * this.width, 20);
 
 };
 
@@ -1103,6 +1128,15 @@ function deg(radians){
 	return radians * (180 / Math.PI);
 }
 
+function winCondition(enemies){
+	for(var i = 0; i < enemies.length; i++){
+		if(enemies[i].alive)
+			return false;
+	}
+	
+	return true;
+}
+
 function getHit(ray){
 	var hit = -1;
 	while (++hit < ray.length && ray[hit].height <= 0);
@@ -1145,7 +1179,7 @@ var camera = new Camera(display, MOBILE ? 160 : 320, Math.PI * 0.4);
 var loop = new GameLoop();
 
 var enemies = [];
-var enemyCount = 1;
+var enemyCount = 10;
 
 for(var i = 0; i < enemyCount; i++){
 	enemies.push(new Enemy(0.2, 100, 100, enemyTextureData));
@@ -1153,14 +1187,11 @@ for(var i = 0; i < enemyCount; i++){
 
 map.spawn(enemies);
 
-var audioTheme = document.getElementById("theme");
-var audioAK = document.getElementById("ak");
-var audioBunny = document.getElementById("bunny");
-//audioBunny.play();
-//audioTheme.play();
+//Start level intro music, 'put bunny back in the box' line
+audioBunny_line.play();
 
-var duration = 7;
-//console.debug(duration);
+var duration = 5;
+console.debug(duration);
 var elapsed = 0;
 var played = false;
 
@@ -1180,8 +1211,10 @@ loop.start(function frame(seconds) {
 	elapsed += seconds;
 	//console.debug(elapsed);
 	if(elapsed > duration && !played){
-		//audioTheme.play();
+		audio_theme1.loop = true;
+		audio_theme1.play();//start level theme music
 		played = true;
 	}
+	
 	 
 });
