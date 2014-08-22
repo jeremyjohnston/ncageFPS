@@ -30,6 +30,9 @@ kill boss cage and win!
 
 TODO: Consider a single image/spritesheet for game, and have
 all entities define an x, y, w, h, and dx to draw from the sheet.
+
+TODO: maybe make the game about chasing bunnies that get faster as you damage them,
+while avoiding bees.
 */
 
 var CIRCLE = Math.PI * 2;
@@ -1182,7 +1185,7 @@ var enemies = [];
 var enemyCount = 10;
 
 for(var i = 0; i < enemyCount; i++){
-	enemies.push(new Enemy(0.2, 100, 100, enemyTextureData));
+	enemies.push(new Enemy(2, 100, 100, enemyTextureData));
 }
 
 map.spawn(enemies);
