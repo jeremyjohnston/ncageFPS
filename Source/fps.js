@@ -20,6 +20,7 @@ another good res http://www.spriters-resource.com
 http://www.8bitpeoples.com/discography/by/bit_shifter <-- activation.mp3
 http://chipmusic.org/
 
+http://freepd.com/70s%20Sci%20Fi/Hidden%20Danger%20B
 http://freepd.com/70s%20Sci%20Fi/Overt%20Danger%20A and other Kevin Macleod creations
 
 some ideas

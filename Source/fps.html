@@ -1,32 +1,53 @@
 <html>
   <head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Raycaster Demo - PlayfulJS</title>
+    <title>CAGED - Raycaster Demo</title>
   </head>
   <body style='background: #BBBBBB; margin: 0; padding: 0'>
   
-	<h1>CAGED</h1>
-	<h2>Arrow Keys or WASD to move, space or NUMPAD0 to fire. Box the bunnies!</h2>
-	<canvas id='display' width='600' height='600' 
-					style='width: 90%; height: 70%; border: 1px solid #000000; margin: 20px' />
+	<div>
+		<h1>CAGED</h1>
+		<h2>Arrow Keys or WASD to move, space or NUMPAD0 to fire. Box the bunnies!</h2>
+		Made by <a href="http://jermjohn.blogspot.com/">Jeremy Johnston</a>.
+		
+		<canvas id='display' width='600' height='600' 
+						style='width: 90%; height: 70%; border: 1px solid #000000; margin: 20px' />
+		
+		
+		<audio id="shoot1_effect">
+			<source src="../Assets/Laser_Shoot.wav" type="audio/wav">
+		</audio>
+		<audio id="explode1_effect">
+			<source src="../Assets/explode1.wav" type="audio/wav">
+		</audio>
+		<audio id="explode2_effect">
+			<source src="../Assets/Hit_Hurt.wav" type="audio/wav">
+		</audio>
+		<audio id="BunnyInBox_line">
+			<source src="../Assets/bunny.wav" type="audio/wav">
+		</audio>
+		<audio id="HiddenDanger_theme213">
+			<source src="../Assets/Hidden Danger B.mp3" type="audio/mp3">
+		</audio>
+		
+		<script src ="fps.js"></script>
+		
+	</div>
 	
 	
-	<audio id="shoot1_effect">
-		<source src="../Assets/Laser_Shoot.wav" type="audio/wav">
-	</audio>
-	<audio id="explode1_effect">
-		<source src="../Assets/explode1.wav" type="audio/wav">
-	</audio>
-	<audio id="explode2_effect">
-		<source src="../Assets/Hit_Hurt.wav" type="audio/wav">
-	</audio>
-	<audio id="BunnyInBox_line">
-		<source src="../Assets/bunny.wav" type="audio/wav">
-	</audio>
-	<audio id="HiddenDanger_theme213">
-		<source src="../Assets/Hidden Danger B.mp3" type="audio/mp3">
-	</audio>
-	<script src ="fps.js"></script>
+	<br></br>
+	<div>
+	<h3>Attributions</h3>
+	<ul style ="list-style-type: decimal">
+		<li>Inspired by Raycasting tutorial at playfuljs.com</li>
+		<li>Music by Kevin Macleod, from <a href="http://freepd.com/70s%20Sci%20Fi/Hidden%20Danger%20B">freepd.com</a> </li>
+		<li>Nicolas Cage lines pulled from Soundboard.com. Credit of course to Nicolas Cage</li>
+		<li>Other sounds created at <a href="bfxr.net">bfxr.net</a> by Jeremy Johnston</li>
+		<li>Art from 'the internet' with some modifications by Jeremy Johnston</li>
+	</ul>
 	
+	
+	Contact me on my website (link above) or tweet me at <a href="https://twitter.com/jeremypj">https://twitter.com/jeremypj</a>
+	</div>
   </body>
 </html>
